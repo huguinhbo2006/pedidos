@@ -28,23 +28,36 @@ export class GoogleMapsService {
   readonly googleReady = signal(false);
   readonly googleError = signal<string | null>(null);
 
-  loadConfigAndInit(forceReload = false): Promise<MapsConfig> {
+  async loadConfigAndInit(forceReload = false): Promise<MapsConfig> {
+    if (environment.googleMapsApiKey) {
+      const localCfg: MapsConfig = {
+        has_google_maps_key: true,
+        api_key: environment.googleMapsApiKey,
+        region: 'mx',
+        source: 'env',
+      };
+      this.config.set(localCfg);
+      const ok = await this.loadGoogleScript(environment.googleMapsApiKey, 'mx', forceReload);
+      this.googleReady.set(ok);
+      return localCfg;
+    }
+
     return new Promise((resolve) => {
       this.api
         .getMapsConfig()
         .pipe(
           catchError(() =>
             of<MapsConfig>({
-              has_google_maps_key: Boolean(environment.googleMapsApiKey),
-              api_key: environment.googleMapsApiKey || null,
+              has_google_maps_key: false,
+              api_key: null,
               region: 'mx',
-              source: environment.googleMapsApiKey ? 'env' : 'none',
+              source: 'none',
             })
           )
         )
         .subscribe(async (cfg) => {
           this.config.set(cfg);
-          const effectiveKey = cfg.api_key || environment.googleMapsApiKey || null;
+          const effectiveKey = cfg.api_key || null;
           if (effectiveKey) {
             const ok = await this.loadGoogleScript(effectiveKey, cfg.region || 'mx', forceReload);
             this.googleReady.set(ok);

@@ -31,17 +31,6 @@
       </nav>
 
       <div class="topbar-actions">
-        <button
-          type="button"
-          class="maps-status-btn"
-          [class.is-active]="mapsService.googleReady()"
-          (click)="showMapsModal.set(true)"
-          title="Configurar Google Maps API Key"
-        >
-          <span>🗺️</span>
-          <span>{{ mapsService.googleReady() ? 'Google Maps OK' : 'Config. Maps' }}</span>
-        </button>
-
         <div class="user-pill">
           <span class="avatar">{{ (auth.user()?.name || 'H').slice(0, 1) }}</span>
           <span class="uname">{{ auth.user()?.username || 'hugo.perez' }}</span>
@@ -65,8 +54,4 @@
       </div>
     }
   </div>
-
-  @if (showMapsModal()) {
-    <app-maps-settings-modal (closed)="showMapsModal.set(false)" />
-  }
 </div>
