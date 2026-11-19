@@ -32,7 +32,7 @@ import { ToastService } from '../../core/services/toast.service';
               autocomplete="off"
             />
             <small class="hint">
-              También puedes configurarla en <code>backend/.env</code> con <code>GOOGLE_MAPS_API_KEY</code>.
+              También puedes configurarla en <code>api/.env</code> con <code>GOOGLE_MAPS_API_KEY</code>.
               Si se deja vacío, la app usará búsqueda geográfica de respaldo.
             </small>
           </div>

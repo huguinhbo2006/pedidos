@@ -1,42 +1,27 @@
-# See https://docs.github.com/get-started/getting-started-with-git/ignoring-files for more about ignoring files.
-
-# Compiled output
-/dist
-/tmp
-/out-tsc
-/bazel-out
-
-# Node
-/node_modules
-npm-debug.log
-yarn-error.log
-
-# IDEs and editors
-.idea/
-.project
-.classpath
-.c9/
-*.launch
-.settings/
-*.sublime-workspace
-
-# Visual Studio Code
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-.history/*
-
-# Miscellaneous
-/.angular/cache
-.sass-cache/
-/connect.lock
-/coverage
-/libpeerconnection.log
-testem.log
-/typings
-
-# System files
+# OS / Editor
 .DS_Store
 Thumbs.db
+
+# Node / Angular (admin)
+admin/node_modules/
+admin/dist/
+admin/.angular/
+admin/tmp/
+admin/out-tsc/
+
+# Laravel / PHP (api)
+api/vendor/
+api/node_modules/
+api/.env
+api/.env.backup
+api/.env.production
+api/database/*.sqlite*
+!api/database/.gitignore
+api/public/build/
+api/public/hot
+api/public/storage
+api/storage/*.key
+api/storage/logs/*.log
+api/storage/pail/
+api/.phpunit.cache/
+api/.phpunit.result.cache

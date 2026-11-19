@@ -1,15 +1,22 @@
-name: Deploy Pedidos (Angular) to Hostinger
+name: Deploy Admin (Angular) to Hostinger
 
 on:
   push:
     branches:
       - main
+    paths:
+      - 'admin/**'
+      - '.github/workflows/deploy-admin.yml'
   workflow_dispatch:
 
 jobs:
-  build-and-deploy:
-    name: Build & Deploy Angular Pedidos
+  build-and-deploy-admin:
+    name: Build & Deploy Angular Admin
     runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: admin
 
     steps:
       - name: Checkout Code
@@ -27,6 +34,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
+          cache-dependency-path: admin/package-lock.json
 
       - name: Install Dependencies
         run: npm ci
@@ -37,7 +45,7 @@ jobs:
       - name: Package Browser Build Contents
         run: |
           cd dist/tacos-dorados-web/browser
-          tar -czf ../../../pedidos-dist.tar.gz .
+          tar -czf "$GITHUB_WORKSPACE/pedidos-dist.tar.gz" .
 
       - name: Ensure Target Directory Exists on Hostinger
         uses: appleboy/ssh-action@v1.0.3
@@ -77,4 +85,4 @@ jobs:
             find . -maxdepth 1 ! -name '.' ! -name 'pedidos-dist.tar.gz' -exec rm -rf {} +
             tar -xzf pedidos-dist.tar.gz
             rm -f pedidos-dist.tar.gz
-            echo "✅ Frontend desplegado correctamente en $TARGET"
+            echo "✅ Admin desplegado correctamente en $TARGET"

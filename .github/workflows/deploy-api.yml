@@ -1,0 +1,137 @@
+name: Deploy API (Laravel) to Hostinger
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'api/**'
+      - '.github/workflows/deploy-api.yml'
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy-api:
+    name: Build & Deploy Laravel API
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: api
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Validate SSH Secret
+        run: |
+          if [ -z "${{ secrets.HOSTINGER_SSH_PASSWORD }}" ] && [ -z "${{ secrets.HOSTINGER_SSH_KEY }}" ]; then
+            echo "❌ Falta configurar el secreto HOSTINGER_SSH_PASSWORD o HOSTINGER_SSH_KEY en GitHub -> Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+
+      - name: Setup PHP 8.2
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo_sqlite, mbstring, openssl, curl, tokenizer, xml, ctype, json
+          tools: composer:v2
+
+      - name: Install Production Composer Dependencies
+        run: composer install --no-dev --optimize-autoloader --no-interaction --no-progress
+
+      - name: Package API Release Archive
+        run: |
+          tar -czf "$GITHUB_WORKSPACE/api-pedidos-dist.tar.gz" \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.env' \
+            --exclude='.env.backup' \
+            --exclude='.env.production' \
+            --exclude='node_modules' \
+            --exclude='tests' \
+            --exclude='database/*.sqlite*' \
+            --exclude='storage/logs/*.log' \
+            --exclude='bootstrap/cache/*.php' \
+            .
+
+      - name: Ensure Target Directory Exists on Hostinger
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOSTINGER_SSH_HOST || '195.35.39.62' }}
+          port: ${{ secrets.HOSTINGER_SSH_PORT || '65002' }}
+          username: ${{ secrets.HOSTINGER_SSH_USER || 'u111559603' }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          password: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
+          script: |
+            TARGET="${{ secrets.API_TARGET_DIR || '/home/u111559603/domains/taqueriamary.com/public_html/api-pedidos' }}"
+            mkdir -p "$TARGET"
+
+      - name: Upload Release Archive via SCP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.HOSTINGER_SSH_HOST || '195.35.39.62' }}
+          port: ${{ secrets.HOSTINGER_SSH_PORT || '65002' }}
+          username: ${{ secrets.HOSTINGER_SSH_USER || 'u111559603' }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          password: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
+          source: "api-pedidos-dist.tar.gz"
+          target: "${{ secrets.API_TARGET_DIR || '/home/u111559603/domains/taqueriamary.com/public_html/api-pedidos' }}"
+          timeout: 180s
+
+      - name: Extract and Run Laravel Migrations on Hostinger
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOSTINGER_SSH_HOST || '195.35.39.62' }}
+          port: ${{ secrets.HOSTINGER_SSH_PORT || '65002' }}
+          username: ${{ secrets.HOSTINGER_SSH_USER || 'u111559603' }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          password: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
+          script: |
+            TARGET="${{ secrets.API_TARGET_DIR || '/home/u111559603/domains/taqueriamary.com/public_html/api-pedidos' }}"
+            cd "$TARGET"
+
+            tar -xzf api-pedidos-dist.tar.gz
+            rm -f api-pedidos-dist.tar.gz
+
+            mkdir -p storage/framework/sessions storage/framework/views storage/framework/cache/data storage/logs bootstrap/cache database
+            chmod -R 775 storage bootstrap/cache database
+
+            PHP_BIN="php"
+            for candidate in /opt/alt/php83/usr/bin/php /opt/alt/php82/usr/bin/php /usr/bin/php8.3 /usr/bin/php8.2 php; do
+              if command -v "$candidate" >/dev/null 2>&1 || [ -x "$candidate" ]; then
+                VER=$("$candidate" -r "echo PHP_VERSION_ID;" 2>/dev/null || echo 0)
+                if [ "$VER" -ge 80200 ] 2>/dev/null; then
+                  PHP_BIN="$candidate"
+                  break
+                fi
+              fi
+            done
+            echo "Using PHP binary: $PHP_BIN ($($PHP_BIN -v | head -n 1))"
+
+            if [ ! -f .env ]; then
+              cp .env.example .env
+              sed -i 's|^APP_ENV=.*|APP_ENV=production|' .env
+              sed -i 's|^APP_DEBUG=.*|APP_DEBUG=false|' .env
+              sed -i 's|^APP_URL=.*|APP_URL=https://api-pedidos.taqueriamary.com|' .env
+              $PHP_BIN artisan key:generate --force
+            fi
+
+            if [ ! -f database/database.sqlite ]; then
+              touch database/database.sqlite
+            fi
+            chmod 664 database/database.sqlite
+
+            $PHP_BIN artisan migrate --force
+
+            USERS_COUNT=$($PHP_BIN -r "require 'vendor/autoload.php'; \$app = require 'bootstrap/app.php'; \$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); echo App\Models\User::count();")
+            if [ "$USERS_COUNT" = "0" ]; then
+              echo "Sembrando usuario único y catálogo inicial..."
+              $PHP_BIN artisan db:seed --force
+            fi
+
+            $PHP_BIN artisan optimize:clear
+            $PHP_BIN artisan config:cache
+            $PHP_BIN artisan route:cache
+            $PHP_BIN -r "if (function_exists('opcache_reset')) { opcache_reset(); }" || true
+
+            echo "✅ API Laravel desplegada correctamente en $TARGET"

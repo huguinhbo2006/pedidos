@@ -1,0 +1,10 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    # Bloquear acceso directo desde el dominio principal a cualquier ruta fuera de public/
+    RewriteCond %{REQUEST_URI} ^/api-pedidos/(?!public/) [NC]
+    RewriteRule .* - [F,L]
+</IfModule>
+
+<FilesMatch "^\.env|\.sqlite">
+    Require all denied
+</FilesMatch>
