@@ -99,6 +99,8 @@ export class NewOrderComponent implements OnInit, OnDestroy {
 
   readonly submitting = signal(false);
   readonly formError = signal<string | null>(null);
+  readonly currentStep = signal<1 | 2 | 3>(1);
+  readonly stepError = signal<string | null>(null);
 
   private uidCounter = 1;
   private readonly phoneInput$ = new Subject<string>();
@@ -250,6 +252,69 @@ export class NewOrderComponent implements OnInit, OnDestroy {
 
   get hasValidPhoneLength(): boolean {
     return this.customerPhone.replace(/\D+/g, '').length >= 7;
+  }
+
+  get isStep1Valid(): boolean {
+    return this.hasValidPhoneLength && this.customerName.trim().length >= 2;
+  }
+
+  get activeDeliveryAddress(): string {
+    const saved = this.selectedSavedAddress();
+    const usingSaved = !this.useNewAddress() && saved !== null;
+    return usingSaved ? saved.address : this.newAddressText.trim();
+  }
+
+  get activeDeliveryReferences(): string {
+    const saved = this.selectedSavedAddress();
+    const usingSaved = !this.useNewAddress() && saved !== null;
+    return usingSaved ? this.savedAddressReferences.trim() : this.newAddressReferences.trim();
+  }
+
+  get isStep2Valid(): boolean {
+    return this.activeDeliveryAddress.length >= 4;
+  }
+
+  goToStep(target: 1 | 2 | 3): void {
+    this.stepError.set(null);
+    this.formError.set(null);
+
+    if (target <= this.currentStep()) {
+      this.currentStep.set(target);
+      return;
+    }
+
+    if (target >= 2 && !this.isStep1Valid) {
+      this.currentStep.set(1);
+      this.stepError.set('Completa el celular (mínimo 7 dígitos) y el nombre del cliente para continuar.');
+      return;
+    }
+
+    if (target === 3 && !this.isStep2Valid) {
+      this.currentStep.set(2);
+      this.stepError.set('Selecciona un domicilio guardado o busca el domicilio de entrega para continuar.');
+      return;
+    }
+
+    this.currentStep.set(target);
+  }
+
+  nextStep(): void {
+    const step = this.currentStep();
+    if (step === 1) {
+      this.goToStep(2);
+    } else if (step === 2) {
+      this.goToStep(3);
+    }
+  }
+
+  prevStep(): void {
+    this.stepError.set(null);
+    const step = this.currentStep();
+    if (step === 3) {
+      this.currentStep.set(2);
+    } else if (step === 2) {
+      this.currentStep.set(1);
+    }
   }
 
   pickSuggestedPhone(phone: string): void {
@@ -490,11 +555,13 @@ export class NewOrderComponent implements OnInit, OnDestroy {
 
     const normalizedDigits = this.customerPhone.replace(/\D+/g, '');
     if (normalizedDigits.length < 7) {
+      this.currentStep.set(1);
       this.formError.set('Ingresa un número de celular válido (mínimo 7 dígitos).');
       return;
     }
 
     if (this.customerName.trim().length < 2) {
+      this.currentStep.set(1);
       this.formError.set('Ingresa el nombre del cliente.');
       return;
     }
@@ -504,11 +571,13 @@ export class NewOrderComponent implements OnInit, OnDestroy {
     const deliveryAddress = usingSaved ? savedAddr.address : this.newAddressText.trim();
 
     if (deliveryAddress.length < 4) {
+      this.currentStep.set(2);
       this.formError.set('Selecciona un domicilio guardado o busca el domicilio de entrega.');
       return;
     }
 
     if (this.cart().length === 0) {
+      this.currentStep.set(3);
       this.formError.set('Agrega al menos un producto o paquete al pedido.');
       return;
     }

@@ -2,414 +2,500 @@
   <div class="page-header">
     <div>
       <h1>Nuevo Pedido — Taquería Mary</h1>
-      <p class="subtitle">Captura celular para buscar cliente en automático, arma paquetes/productos y genera el PDF.</p>
+      <p class="subtitle">Captura tu pedido paso a paso mientras revisas el resumen en tiempo real.</p>
     </div>
     <a routerLink="/pedidos" class="btn btn-outline">← Volver a Pedidos del Día</a>
   </div>
 
   <div class="order-layout">
-    <!-- LEFT COLUMN: Cliente, Domicilio, Paquetes y Catálogo -->
+    <!-- LEFT COLUMN: WIZARD POR PASOS -->
     <div class="left-col">
-      <!-- PASO 1: CLIENTE -->
-      <section class="panel card">
-        <div class="panel-head">
-          <span class="step-badge">1</span>
-          <div>
-            <h2>Datos del Cliente</h2>
-            <small>Al capturar el celular, si el cliente ya pidió antes se llenan sus datos en automático.</small>
+      <!-- BARRA DE PASOS -->
+      <nav class="wizard-stepper card" aria-label="Pasos del pedido">
+        <button
+          type="button"
+          class="step-tab"
+          [class.active]="currentStep() === 1"
+          [class.done]="isStep1Valid && currentStep() > 1"
+          (click)="goToStep(1)"
+        >
+          <span class="step-num">{{ isStep1Valid && currentStep() > 1 ? '✓' : '1' }}</span>
+          <div class="step-txt">
+            <strong>Cliente</strong>
+            <small>{{ customerName.trim() || 'Celular y nombre' }}</small>
           </div>
-        </div>
+        </button>
 
-        <div class="customer-fields">
-          <div class="form-field phone-field">
-            <label for="customerPhone">Celular / Teléfono *</label>
-            <div class="input-with-status">
-              <input
-                id="customerPhone"
-                type="tel"
-                [ngModel]="customerPhone"
-                (ngModelChange)="onPhoneChange($event)"
-                placeholder="Ej. 3320536289"
-                autocomplete="off"
-                autofocus
-              />
-              @if (phoneSearching()) {
-                <span class="lookup-badge">Buscando...</span>
-              } @else if (foundCustomer()) {
-                <span class="lookup-badge found">✓ Cliente encontrado</span>
-              } @else if (hasValidPhoneLength) {
-                <span class="lookup-badge new">Nuevo cliente</span>
+        <span class="step-arrow">›</span>
+
+        <button
+          type="button"
+          class="step-tab"
+          [class.active]="currentStep() === 2"
+          [class.done]="isStep2Valid && currentStep() > 2"
+          (click)="goToStep(2)"
+        >
+          <span class="step-num">{{ isStep2Valid && currentStep() > 2 ? '✓' : '2' }}</span>
+          <div class="step-txt">
+            <strong>Domicilio</strong>
+            <small>{{ isStep2Valid ? 'Dirección lista' : 'Google Maps / guardado' }}</small>
+          </div>
+        </button>
+
+        <span class="step-arrow">›</span>
+
+        <button
+          type="button"
+          class="step-tab"
+          [class.active]="currentStep() === 3"
+          [class.done]="cart().length > 0 && currentStep() === 3"
+          (click)="goToStep(3)"
+        >
+          <span class="step-num">3</span>
+          <div class="step-txt">
+            <strong>Paquetes y Productos</strong>
+            <small>{{ cart().length > 0 ? cart().length + ' concepto(s)' : 'Armar pedido' }}</small>
+          </div>
+        </button>
+      </nav>
+
+      @if (stepError()) {
+        <div class="alert alert-error">{{ stepError() }}</div>
+      }
+
+      <!-- PASO 1: CLIENTE -->
+      @if (currentStep() === 1) {
+        <section class="panel card wizard-panel">
+          <div class="panel-head">
+            <span class="step-badge">1</span>
+            <div>
+              <h2>Datos del Cliente</h2>
+              <small>Al capturar el celular, si el cliente ya pidió antes se llenan sus datos y domicilios en automático.</small>
+            </div>
+          </div>
+
+          <div class="customer-fields">
+            <div class="form-field phone-field">
+              <label for="customerPhone">Celular / Teléfono *</label>
+              <div class="input-with-status">
+                <input
+                  id="customerPhone"
+                  type="tel"
+                  [ngModel]="customerPhone"
+                  (ngModelChange)="onPhoneChange($event)"
+                  (keyup.enter)="isStep1Valid && nextStep()"
+                  placeholder="Ej. 3320536289"
+                  autocomplete="off"
+                  autofocus
+                />
+                @if (phoneSearching()) {
+                  <span class="lookup-badge">Buscando...</span>
+                } @else if (foundCustomer()) {
+                  <span class="lookup-badge found">✓ Cliente encontrado</span>
+                } @else if (hasValidPhoneLength) {
+                  <span class="lookup-badge new">Nuevo cliente</span>
+                }
+              </div>
+
+              @if (phoneSuggestions().length > 0 && !foundCustomer()) {
+                <div class="phone-suggestions">
+                  <span class="sug-title">Coincidencias rápidas:</span>
+                  @for (sug of phoneSuggestions(); track sug.id) {
+                    <button
+                      type="button"
+                      class="sug-chip"
+                      (click)="pickSuggestedPhone(sug.phone)"
+                    >
+                      📞 {{ sug.phone }} · <strong>{{ sug.name }}</strong>
+                      ({{ sug.addresses_count }} dom.)
+                    </button>
+                  }
+                </div>
               }
             </div>
 
-            @if (phoneSuggestions().length > 0 && !foundCustomer()) {
-              <div class="phone-suggestions">
-                <span class="sug-title">Coincidencias rápidas:</span>
-                @for (sug of phoneSuggestions(); track sug.id) {
+            <div class="form-field">
+              <label for="customerName">Nombre completo *</label>
+              <input
+                id="customerName"
+                type="text"
+                [(ngModel)]="customerName"
+                (keyup.enter)="isStep1Valid && nextStep()"
+                placeholder="Ej. María López"
+              />
+            </div>
+          </div>
+
+          @if (foundCustomer(); as customer) {
+            <div class="returning-banner">
+              ✅ <strong>{{ customer.name }}</strong> ya está registrado(a) con
+              <strong>{{ customer.addresses?.length || 0 }}</strong> domicilio(s) guardado(s).
+            </div>
+          }
+
+          <div class="wizard-nav">
+            <span></span>
+            <button type="button" class="btn btn-primary btn-lg" (click)="nextStep()">
+              Siguiente: Domicilio →
+            </button>
+          </div>
+        </section>
+      }
+
+      <!-- PASO 2: DOMICILIOS DEL CLIENTE + GOOGLE MAPS -->
+      @if (currentStep() === 2) {
+        <section class="panel card wizard-panel">
+          <div class="panel-head">
+            <span class="step-badge">2</span>
+            <div>
+              <h2>Domicilio de Entrega</h2>
+              <small>
+                @if (foundCustomer()?.addresses?.length) {
+                  Desglose de domicilios registrados de {{ foundCustomer()!.name }} o búsqueda en Google Maps para un nuevo domicilio.
+                } @else {
+                  Búsqueda de domicilio en vivo con Google Maps conforme escribes.
+                }
+              </small>
+            </div>
+          </div>
+
+          @if (foundCustomer()?.addresses?.length) {
+            <div class="saved-addresses-block">
+              <div class="saved-header">
+                <strong>Domicilios guardados de {{ foundCustomer()!.name }}:</strong>
+                <button
+                  type="button"
+                  class="btn btn-sm"
+                  [class.btn-primary]="useNewAddress()"
+                  [class.btn-outline]="!useNewAddress()"
+                  (click)="switchToNewAddress()"
+                >
+                  ➕ Nuevo domicilio
+                </button>
+              </div>
+
+              <div class="address-cards">
+                @for (addr of foundCustomer()!.addresses!; track addr.id) {
                   <button
                     type="button"
-                    class="sug-chip"
-                    (click)="pickSuggestedPhone(sug.phone)"
+                    class="address-option"
+                    [class.selected]="!useNewAddress() && selectedAddressId() === addr.id"
+                    (click)="selectSavedAddress(addr)"
                   >
-                    📞 {{ sug.phone }} · <strong>{{ sug.name }}</strong>
-                    ({{ sug.addresses_count }} dom.)
+                    <div class="addr-top">
+                      <span class="addr-label">{{ addr.label || 'Domicilio' }}</span>
+                      @if ($first) {
+                        <span class="badge badge-muted">Más reciente</span>
+                      }
+                    </div>
+                    <div class="addr-text">📍 {{ addr.address }}</div>
+                    @if (addr.references) {
+                      <div class="addr-refs">Ref: {{ addr.references }}</div>
+                    }
                   </button>
                 }
               </div>
-            }
-          </div>
 
-          <div class="form-field">
-            <label for="customerName">Nombre completo *</label>
-            <input
-              id="customerName"
-              type="text"
-              [(ngModel)]="customerName"
-              placeholder="Ej. María López"
-            />
-          </div>
-        </div>
+              @if (!useNewAddress() && selectedSavedAddress()) {
+                <div class="form-field mt-sm">
+                  <label for="savedRefs">Referencias para esta entrega (opcional)</label>
+                  <input
+                    id="savedRefs"
+                    type="text"
+                    [(ngModel)]="savedAddressReferences"
+                    placeholder="Portón blanco, tocar timbre, entre calles..."
+                  />
+                </div>
+              }
+            </div>
+          }
 
-        @if (foundCustomer(); as customer) {
-          <div class="returning-banner">
-            ✅ <strong>{{ customer.name }}</strong> ya está registrado(a) con
-            <strong>{{ customer.addresses?.length || 0 }}</strong> domicilio(s) guardado(s).
-          </div>
-        }
-      </section>
-
-      <!-- PASO 2: DOMICILIOS DEL CLIENTE + GOOGLE MAPS -->
-      <section class="panel card">
-        <div class="panel-head">
-          <span class="step-badge">2</span>
-          <div>
-            <h2>Domicilio de Entrega</h2>
-            <small>
+          @if (useNewAddress() || !(foundCustomer()?.addresses?.length)) {
+            <div class="new-address-block">
               @if (foundCustomer()?.addresses?.length) {
-                Desglose de domicilios registrados del cliente o búsqueda en Google Maps para un nuevo domicilio.
-              } @else {
-                Búsqueda de domicilio en vivo con Google Maps conforme escribes.
+                <div class="new-addr-title">Buscar y asignar un nuevo domicilio a este cliente:</div>
               }
-            </small>
-          </div>
-        </div>
 
-        @if (foundCustomer()?.addresses?.length) {
-          <div class="saved-addresses-block">
-            <div class="saved-header">
-              <strong>Domicilios guardados de {{ foundCustomer()!.name }}:</strong>
-              <button
-                type="button"
-                class="btn btn-sm"
-                [class.btn-primary]="useNewAddress()"
-                [class.btn-outline]="!useNewAddress()"
-                (click)="switchToNewAddress()"
-              >
-                ➕ Nuevo domicilio
-              </button>
-            </div>
+              <app-google-maps-address-input
+                [address]="newAddressText"
+                [latitude]="newAddressLat"
+                [longitude]="newAddressLng"
+                [placeId]="newAddressPlaceId"
+                (addressChange)="onGoogleAddressChange($event)"
+              />
 
-            <div class="address-cards">
-              @for (addr of foundCustomer()!.addresses!; track addr.id) {
-                <button
-                  type="button"
-                  class="address-option"
-                  [class.selected]="!useNewAddress() && selectedAddressId() === addr.id"
-                  (click)="selectSavedAddress(addr)"
-                >
-                  <div class="addr-top">
-                    <span class="addr-label">{{ addr.label || 'Domicilio' }}</span>
-                    @if ($first) {
-                      <span class="badge badge-muted">Más reciente</span>
-                    }
-                  </div>
-                  <div class="addr-text">📍 {{ addr.address }}</div>
-                  @if (addr.references) {
-                    <div class="addr-refs">Ref: {{ addr.references }}</div>
-                  }
-                </button>
-              }
-            </div>
+              <div class="address-extra-grid">
+                <div class="form-field">
+                  <label for="addrRefs">Referencias / Entre calles (opcional)</label>
+                  <input
+                    id="addrRefs"
+                    type="text"
+                    [(ngModel)]="newAddressReferences"
+                    placeholder="Ej. Casa portón negro, frente al parque"
+                  />
+                </div>
 
-            @if (!useNewAddress() && selectedSavedAddress()) {
-              <div class="form-field mt-sm">
-                <label for="savedRefs">Referencias para esta entrega (opcional)</label>
-                <input
-                  id="savedRefs"
-                  type="text"
-                  [(ngModel)]="savedAddressReferences"
-                  placeholder="Portón blanco, tocar timbre, entre calles..."
-                />
-              </div>
-            }
-          </div>
-        }
-
-        @if (useNewAddress() || !(foundCustomer()?.addresses?.length)) {
-          <div class="new-address-block">
-            @if (foundCustomer()?.addresses?.length) {
-              <div class="new-addr-title">Buscar y asignar un nuevo domicilio a este cliente:</div>
-            }
-
-            <app-google-maps-address-input
-              [address]="newAddressText"
-              [latitude]="newAddressLat"
-              [longitude]="newAddressLng"
-              [placeId]="newAddressPlaceId"
-              (addressChange)="onGoogleAddressChange($event)"
-            />
-
-            <div class="address-extra-grid">
-              <div class="form-field">
-                <label for="addrRefs">Referencias / Entre calles (opcional)</label>
-                <input
-                  id="addrRefs"
-                  type="text"
-                  [(ngModel)]="newAddressReferences"
-                  placeholder="Ej. Casa portón negro, frente al parque"
-                />
-              </div>
-
-              <div class="form-field">
-                <label for="addrLabel">Etiqueta del domicilio (opcional)</label>
-                <input
-                  id="addrLabel"
-                  type="text"
-                  [(ngModel)]="newAddressLabel"
-                  placeholder="Ej. Casa, Trabajo, Casa mamá"
-                />
+                <div class="form-field">
+                  <label for="addrLabel">Etiqueta del domicilio (opcional)</label>
+                  <input
+                    id="addrLabel"
+                    type="text"
+                    [(ngModel)]="newAddressLabel"
+                    placeholder="Ej. Casa, Trabajo, Casa mamá"
+                  />
+                </div>
               </div>
             </div>
-          </div>
-        }
-      </section>
+          }
 
-      <!-- PASO 3: PAQUETES, CATÁLOGO DE PRODUCTOS Y PROMOCIONES -->
-      <section class="panel card">
-        <div class="panel-head catalog-head">
-          <div class="panel-head-left">
-            <span class="step-badge">3</span>
-            <div>
-              <h2>Paquetes, Productos y Promociones</h2>
-              <small>Arma paquetes eligiendo sabores hasta el límite, agrega productos sueltos o regalos gratis.</small>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            class="btn btn-gold btn-sm"
-            (click)="showCustomPromoBox = !showCustomPromoBox"
-          >
-            🎁 {{ showCustomPromoBox ? 'Ocultar regalo libre' : '+ Regalo personalizado' }}
-          </button>
-        </div>
-
-        <!-- Selector de pestaña: Paquetes vs Productos individuales -->
-        <div class="mode-switcher">
-          <button
-            type="button"
-            class="mode-btn"
-            [class.active]="catalogMode() === 'packages'"
-            (click)="catalogMode.set('packages')"
-          >
-            📦 Paquetes ({{ packages().length }})
-          </button>
-          <button
-            type="button"
-            class="mode-btn"
-            [class.active]="catalogMode() === 'products'"
-            (click)="catalogMode.set('products')"
-          >
-            🌮 Productos Individuales ({{ products().length }})
-          </button>
-        </div>
-
-        @if (showCustomPromoBox) {
-          <div class="custom-promo-box">
-            <div class="promo-grid">
-              <div class="form-field">
-                <label>Producto / regalo gratis</label>
-                <input
-                  type="text"
-                  [(ngModel)]="customPromoName"
-                  placeholder="Ej. 5 Litros de Agua de Horchata, Salsa extra..."
-                />
-              </div>
-              <div class="form-field qty-col">
-                <label>Cant.</label>
-                <input type="number" [(ngModel)]="customPromoQty" min="1" max="50" />
-              </div>
-              <div class="form-field">
-                <label>Motivo / etiqueta</label>
-                <input
-                  type="text"
-                  [(ngModel)]="customPromoReason"
-                  placeholder="Regalo / Promoción"
-                />
-              </div>
-            </div>
-            <button type="button" class="btn btn-gold btn-sm" (click)="addCustomPromoItem()">
-              🎁 Agregar regalo al pedido ($0.00)
+          <div class="wizard-nav">
+            <button type="button" class="btn btn-outline" (click)="prevStep()">
+              ← Anterior: Cliente
+            </button>
+            <button type="button" class="btn btn-primary btn-lg" (click)="nextStep()">
+              Siguiente: Paquetes y Productos →
             </button>
           </div>
-        }
+        </section>
+      }
 
-        <!-- PROMOCIÓN AUTOMÁTICA POR COMPRA DE PAQUETE -->
-        @if (hasPackageInCart() && packagePromotions().length > 0) {
-          <div class="pkg-promo-banner">
-            @for (promo of packagePromotions(); track promo.id) {
-              <div class="promo-offer">
-                <div class="promo-offer-head">
-                  <strong>🎁 {{ promo.name }}</strong>
-                  <span>Elige hasta {{ promo.max_quantity }} unidad(es) de regalo</span>
+      <!-- PASO 3: PAQUETES, CATÁLOGO DE PRODUCTOS Y PROMOCIONES -->
+      @if (currentStep() === 3) {
+        <section class="panel card wizard-panel">
+          <div class="panel-head catalog-head">
+            <div class="panel-head-left">
+              <span class="step-badge">3</span>
+              <div>
+                <h2>Paquetes, Productos y Promociones</h2>
+                <small>Arma paquetes eligiendo sabores hasta el límite, agrega productos sueltos o regalos gratis.</small>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              class="btn btn-gold btn-sm"
+              (click)="showCustomPromoBox = !showCustomPromoBox"
+            >
+              🎁 {{ showCustomPromoBox ? 'Ocultar regalo libre' : '+ Regalo personalizado' }}
+            </button>
+          </div>
+
+          <div class="mode-switcher">
+            <button
+              type="button"
+              class="mode-btn"
+              [class.active]="catalogMode() === 'packages'"
+              (click)="catalogMode.set('packages')"
+            >
+              📦 Paquetes ({{ packages().length }})
+            </button>
+            <button
+              type="button"
+              class="mode-btn"
+              [class.active]="catalogMode() === 'products'"
+              (click)="catalogMode.set('products')"
+            >
+              🌮 Productos Individuales ({{ products().length }})
+            </button>
+          </div>
+
+          @if (showCustomPromoBox) {
+            <div class="custom-promo-box">
+              <div class="promo-grid">
+                <div class="form-field">
+                  <label>Producto / regalo gratis</label>
+                  <input
+                    type="text"
+                    [(ngModel)]="customPromoName"
+                    placeholder="Ej. 5 Litros de Agua de Horchata, Salsa extra..."
+                  />
                 </div>
-                @if (promo.description) {
-                  <p>{{ promo.description }}</p>
-                }
+                <div class="form-field qty-col">
+                  <label>Cant.</label>
+                  <input type="number" [(ngModel)]="customPromoQty" min="1" max="50" />
+                </div>
+                <div class="form-field">
+                  <label>Motivo / etiqueta</label>
+                  <input
+                    type="text"
+                    [(ngModel)]="customPromoReason"
+                    placeholder="Regalo / Promoción"
+                  />
+                </div>
+              </div>
+              <button type="button" class="btn btn-gold btn-sm" (click)="addCustomPromoItem()">
+                🎁 Agregar regalo al pedido ($0.00)
+              </button>
+            </div>
+          }
 
-                <div class="promo-options-grid">
-                  @for (opt of promo.allowed_options; track opt) {
-                    <div class="promo-opt-item">
-                      <span>{{ opt }}</span>
-                      <div class="promo-opt-ctrl">
-                        <button type="button" (click)="adjustPromoGift(promo, opt, -1)">−</button>
-                        <strong>{{ getPromoOptQty(promo.id, opt) }}</strong>
+          @if (hasPackageInCart() && packagePromotions().length > 0) {
+            <div class="pkg-promo-banner">
+              @for (promo of packagePromotions(); track promo.id) {
+                <div class="promo-offer">
+                  <div class="promo-offer-head">
+                    <strong>🎁 {{ promo.name }}</strong>
+                    <span>Elige hasta {{ promo.max_quantity }} unidad(es) de regalo</span>
+                  </div>
+                  @if (promo.description) {
+                    <p>{{ promo.description }}</p>
+                  }
+
+                  <div class="promo-options-grid">
+                    @for (opt of promo.allowed_options; track opt) {
+                      <div class="promo-opt-item">
+                        <span>{{ opt }}</span>
+                        <div class="promo-opt-ctrl">
+                          <button type="button" (click)="adjustPromoGift(promo, opt, -1)">−</button>
+                          <strong>{{ getPromoOptQty(promo.id, opt) }}</strong>
+                          <button
+                            type="button"
+                            (click)="adjustPromoGift(promo, opt, 1)"
+                            [disabled]="promoTotalSelected(promo) >= promo.max_quantity"
+                          >
+                            +
+                          </button>
+                          <button
+                            type="button"
+                            class="quick-all"
+                            (click)="fillPromoGift(promo, opt)"
+                          >
+                            Todo ({{ promo.max_quantity }})
+                          </button>
+                        </div>
+                      </div>
+                    }
+                  </div>
+
+                  <div class="promo-offer-foot">
+                    <small>Elegidos: {{ promoTotalSelected(promo) }} / {{ promo.max_quantity }}</small>
+                    <button
+                      type="button"
+                      class="btn btn-success btn-sm"
+                      [disabled]="promoTotalSelected(promo) === 0"
+                      (click)="applyPackagePromotion(promo)"
+                    >
+                      🎁 Agregar Regalo al Pedido ($0.00)
+                    </button>
+                  </div>
+                </div>
+              }
+            </div>
+          }
+
+          @if (catalogMode() === 'packages') {
+            @if (packages().length === 0) {
+              <p class="muted-msg">No hay paquetes activos configurados.</p>
+            } @else {
+              <div class="packages-grid">
+                @for (pkg of packages(); track pkg.id) {
+                  <div class="package-tile">
+                    <div class="pkg-info">
+                      <div class="pkg-title-row">
+                        <strong>{{ pkg.name }}</strong>
+                        <span class="pkg-price">{{ formatCurrency(pkg.base_price) }}</span>
+                      </div>
+                      @if (pkg.description) {
+                        <p>{{ pkg.description }}</p>
+                      }
+                      <div class="pkg-groups-tags">
+                        @for (g of pkg.groups; track g.id ?? $index) {
+                          <span class="grp-tag">
+                            {{ g.name }}: hasta {{ g.max_quantity }}
+                          </span>
+                        }
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      class="btn btn-primary"
+                      (click)="openPackageBuilder(pkg)"
+                    >
+                      ⚙️ Escoger sabores y agregar
+                    </button>
+                  </div>
+                }
+              </div>
+            }
+          } @else {
+            <div class="catalog-controls">
+              <div class="cat-pills">
+                @for (cat of categories(); track cat) {
+                  <button
+                    type="button"
+                    class="cat-pill"
+                    [class.active]="selectedCategory() === cat"
+                    (click)="selectedCategory.set(cat)"
+                  >
+                    {{ cat }}
+                  </button>
+                }
+              </div>
+
+              <input
+                type="text"
+                class="cat-search"
+                [(ngModel)]="productSearch"
+                placeholder="Filtrar producto..."
+              />
+            </div>
+
+            @if (loadingProducts()) {
+              <p class="muted-msg">Cargando catálogo...</p>
+            } @else if (filteredProducts().length === 0) {
+              <p class="muted-msg">No hay productos activos que coincidan con el filtro.</p>
+            } @else {
+              <div class="products-grid">
+                @for (product of filteredProducts(); track product.id) {
+                  <div class="product-tile">
+                    <div class="product-info">
+                      <span class="product-cat">{{ product.category }}</span>
+                      <strong>{{ product.name }}</strong>
+                      @if (product.description) {
+                        <small>{{ product.description }}</small>
+                      }
+                    </div>
+                    <div class="product-foot">
+                      <span class="product-price">{{ formatCurrency(product.price) }}</span>
+                      <div class="product-btns">
                         <button
                           type="button"
-                          (click)="adjustPromoGift(promo, opt, 1)"
-                          [disabled]="promoTotalSelected(promo) >= promo.max_quantity"
+                          class="btn btn-primary btn-sm"
+                          (click)="addProductToCart(product, false)"
                         >
-                          +
+                          + Agregar
                         </button>
                         <button
                           type="button"
-                          class="quick-all"
-                          (click)="fillPromoGift(promo, opt)"
+                          class="btn btn-gold btn-sm"
+                          title="Agregar gratis como regalo / promoción"
+                          (click)="addProductToCart(product, true)"
                         >
-                          Todo ({{ promo.max_quantity }})
+                          🎁 Regalo
                         </button>
                       </div>
                     </div>
-                  }
-                </div>
-
-                <div class="promo-offer-foot">
-                  <small>Elegidos: {{ promoTotalSelected(promo) }} / {{ promo.max_quantity }}</small>
-                  <button
-                    type="button"
-                    class="btn btn-success btn-sm"
-                    [disabled]="promoTotalSelected(promo) === 0"
-                    (click)="applyPackagePromotion(promo)"
-                  >
-                    🎁 Agregar Regalo al Pedido ($0.00)
-                  </button>
-                </div>
+                  </div>
+                }
               </div>
             }
-          </div>
-        }
-
-        @if (catalogMode() === 'packages') {
-          @if (packages().length === 0) {
-            <p class="muted-msg">No hay paquetes activos configurados.</p>
-          } @else {
-            <div class="packages-grid">
-              @for (pkg of packages(); track pkg.id) {
-                <div class="package-tile">
-                  <div class="pkg-info">
-                    <div class="pkg-title-row">
-                      <strong>{{ pkg.name }}</strong>
-                      <span class="pkg-price">{{ formatCurrency(pkg.base_price) }}</span>
-                    </div>
-                    @if (pkg.description) {
-                      <p>{{ pkg.description }}</p>
-                    }
-                    <div class="pkg-groups-tags">
-                      @for (g of pkg.groups; track g.id ?? $index) {
-                        <span class="grp-tag">
-                          {{ g.name }}: hasta {{ g.max_quantity }}
-                        </span>
-                      }
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    class="btn btn-primary"
-                    (click)="openPackageBuilder(pkg)"
-                  >
-                    ⚙️ Escoger sabores y agregar
-                  </button>
-                </div>
-              }
-            </div>
           }
-        } @else {
-          <div class="catalog-controls">
-            <div class="cat-pills">
-              @for (cat of categories(); track cat) {
-                <button
-                  type="button"
-                  class="cat-pill"
-                  [class.active]="selectedCategory() === cat"
-                  (click)="selectedCategory.set(cat)"
-                >
-                  {{ cat }}
-                </button>
-              }
-            </div>
 
-            <input
-              type="text"
-              class="cat-search"
-              [(ngModel)]="productSearch"
-              placeholder="Filtrar producto..."
-            />
+          <div class="wizard-nav">
+            <button type="button" class="btn btn-outline" (click)="prevStep()">
+              ← Anterior: Domicilio
+            </button>
+            <span class="ready-hint">
+              @if (cart().length > 0) {
+                ✅ Revisa el resumen a la derecha y guarda el pedido
+              }
+            </span>
           </div>
-
-          @if (loadingProducts()) {
-            <p class="muted-msg">Cargando catálogo...</p>
-          } @else if (filteredProducts().length === 0) {
-            <p class="muted-msg">No hay productos activos que coincidan con el filtro.</p>
-          } @else {
-            <div class="products-grid">
-              @for (product of filteredProducts(); track product.id) {
-                <div class="product-tile">
-                  <div class="product-info">
-                    <span class="product-cat">{{ product.category }}</span>
-                    <strong>{{ product.name }}</strong>
-                    @if (product.description) {
-                      <small>{{ product.description }}</small>
-                    }
-                  </div>
-                  <div class="product-foot">
-                    <span class="product-price">{{ formatCurrency(product.price) }}</span>
-                    <div class="product-btns">
-                      <button
-                        type="button"
-                        class="btn btn-primary btn-sm"
-                        (click)="addProductToCart(product, false)"
-                      >
-                        + Agregar
-                      </button>
-                      <button
-                        type="button"
-                        class="btn btn-gold btn-sm"
-                        title="Agregar gratis como regalo / promoción"
-                        (click)="addProductToCart(product, true)"
-                      >
-                        🎁 Regalo
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              }
-            </div>
-          }
-        }
-      </section>
+        </section>
+      }
     </div>
 
-    <!-- RIGHT COLUMN: RESUMEN Y SUMA DEL PEDIDO -->
+    <!-- RIGHT COLUMN: RESUMEN DEL PEDIDO SIEMPRE VISIBLE -->
     <aside class="right-col">
       <div class="summary-sticky card">
         <div class="summary-head">
@@ -419,10 +505,41 @@
           </span>
         </div>
 
+        <!-- Vista rápida de Cliente y Domicilio en el resumen -->
+        <div class="summary-meta-box">
+          <button type="button" class="meta-row" (click)="goToStep(1)">
+            <span class="meta-ico">👤</span>
+            <div class="meta-txt">
+              @if (isStep1Valid) {
+                <strong>{{ customerName }}</strong>
+                <small>📞 {{ customerPhone }}</small>
+              } @else {
+                <span class="meta-pending">Paso 1: Captura cliente y celular</span>
+              }
+            </div>
+            <span class="meta-edit">Editar</span>
+          </button>
+
+          <button type="button" class="meta-row" (click)="goToStep(2)">
+            <span class="meta-ico">📍</span>
+            <div class="meta-txt">
+              @if (isStep2Valid) {
+                <strong>{{ activeDeliveryAddress }}</strong>
+                @if (activeDeliveryReferences) {
+                  <small>Ref: {{ activeDeliveryReferences }}</small>
+                }
+              } @else {
+                <span class="meta-pending">Paso 2: Selecciona domicilio</span>
+              }
+            </div>
+            <span class="meta-edit">Editar</span>
+          </button>
+        </div>
+
         @if (cart().length === 0) {
           <div class="empty-cart">
             <p>Aún no has agregado productos ni paquetes.</p>
-            <small>Arma un paquete o elige tacos/bebidas individuales.</small>
+            <small>Avanza al Paso 3 para armar paquetes o agregar productos.</small>
           </div>
         } @else {
           <div class="cart-lines">
