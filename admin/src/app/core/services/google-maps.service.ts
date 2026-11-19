@@ -98,6 +98,7 @@ export class GoogleMapsService {
         key: apiKey,
         libraries: 'places',
         language: 'es',
+        loading: 'async',
       });
       if (region) {
         params.set('region', region);
@@ -108,6 +109,7 @@ export class GoogleMapsService {
         try {
           if (window.google?.maps?.importLibrary) {
             await window.google.maps.importLibrary('places');
+            await window.google.maps.importLibrary('maps');
           }
         } catch {
           // Ignore and check places object directly
