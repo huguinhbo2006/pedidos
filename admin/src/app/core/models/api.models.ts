@@ -172,4 +172,5 @@ export interface AddressSuggestion {
   latitude: number | null;
   longitude: number | null;
   source: 'google' | 'nominatim';
+  placePrediction?: any;
 }
