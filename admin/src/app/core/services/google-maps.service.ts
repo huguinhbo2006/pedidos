@@ -7,6 +7,8 @@ import { environment } from '../../../environments/environment';
 declare global {
   interface Window {
     google?: any;
+    gm_authFailure?: () => void;
+    [key: string]: any;
   }
 }
 
@@ -24,6 +26,7 @@ export class GoogleMapsService {
 
   private scriptLoadPromise: Promise<boolean> | null = null;
   private loadedKey: string | null = null;
+  private placesLib: any = null;
 
   readonly config = signal<MapsConfig | null>(null);
   readonly googleReady = signal(false);
@@ -71,8 +74,16 @@ export class GoogleMapsService {
     });
   }
 
+  private hasPlacesLoaded(): boolean {
+    return Boolean(this.placesLib || window.google?.maps?.places);
+  }
+
+  private getPlacesNamespace(): any {
+    return window.google?.maps?.places ?? this.placesLib ?? null;
+  }
+
   private loadGoogleScript(apiKey: string, region: string, forceReload = false): Promise<boolean> {
-    if (!forceReload && this.loadedKey === apiKey && window.google?.maps?.places) {
+    if (!forceReload && this.loadedKey === apiKey && this.hasPlacesLoaded()) {
       return Promise.resolve(true);
     }
 
@@ -81,14 +92,76 @@ export class GoogleMapsService {
     }
 
     this.loadedKey = apiKey;
+    this.placesLib = null;
     this.googleError.set(null);
 
     this.scriptLoadPromise = new Promise<boolean>((resolve) => {
+      let settled = false;
+      const finish = (ok: boolean, errMsg?: string) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
+        delete window[callbackName];
+        if (!ok) {
+          this.scriptLoadPromise = null;
+        }
+        this.ngZone.run(() => {
+          if (errMsg) {
+            this.googleError.set(errMsg);
+          }
+          if (!ok) {
+            this.googleReady.set(false);
+          }
+          resolve(ok);
+        });
+      };
+
       const existingScript = document.getElementById('google-maps-sdk');
       if (existingScript) {
         existingScript.remove();
         delete window.google;
       }
+
+      const callbackName = `__tdGoogleMapsInit_${Date.now()}`;
+      const timeoutId = setTimeout(() => {
+        finish(
+          this.hasPlacesLoaded(),
+          this.hasPlacesLoaded()
+            ? undefined
+            : 'Tiempo de espera agotado al inicializar Google Maps Places.'
+        );
+      }, 15000);
+
+      window.gm_authFailure = () => {
+        this.ngZone.run(() => {
+          this.googleReady.set(false);
+          this.googleError.set(
+            'Google Maps rechazó la API Key (verifica permisos de "Maps JavaScript API", "Places API (New)" y restricciones HTTP).'
+          );
+        });
+        if (!settled) {
+          finish(false);
+        }
+      };
+
+      window[callbackName] = async () => {
+        let importErr: unknown = null;
+        try {
+          if (window.google?.maps?.importLibrary) {
+            this.placesLib = await window.google.maps.importLibrary('places');
+            await window.google.maps.importLibrary('maps');
+          }
+        } catch (err) {
+          importErr = err;
+        }
+
+        if (this.hasPlacesLoaded()) {
+          finish(true);
+        } else {
+          const detail = importErr instanceof Error ? ` (${importErr.message})` : '';
+          finish(false, `Google Maps cargó sin la librería Places${detail}.`);
+        }
+      };
 
       const script = document.createElement('script');
       script.id = 'google-maps-sdk';
@@ -99,36 +172,15 @@ export class GoogleMapsService {
         libraries: 'places',
         language: 'es',
         loading: 'async',
+        callback: callbackName,
       });
       if (region) {
         params.set('region', region);
       }
       script.src = `https://maps.googleapis.com/maps/api/js?${params.toString()}`;
 
-      script.onload = async () => {
-        try {
-          if (window.google?.maps?.importLibrary) {
-            await window.google.maps.importLibrary('places');
-            await window.google.maps.importLibrary('maps');
-          }
-        } catch {
-          // Ignore and check places object directly
-        }
-        this.ngZone.run(() => {
-          if (window.google?.maps?.places) {
-            resolve(true);
-          } else {
-            this.googleError.set('Google Maps cargó sin la librería Places.');
-            resolve(false);
-          }
-        });
-      };
-
       script.onerror = () => {
-        this.ngZone.run(() => {
-          this.googleError.set('No se pudo cargar el script de Google Maps. Verifica tu API Key o conexión.');
-          resolve(false);
-        });
+        finish(false, 'No se pudo cargar el script de Google Maps. Verifica tu API Key o conexión.');
       };
 
       document.head.appendChild(script);
@@ -143,7 +195,7 @@ export class GoogleMapsService {
       return of([]);
     }
 
-    if (this.googleReady() && window.google?.maps?.places) {
+    if (this.googleReady() && this.hasPlacesLoaded()) {
       return from(this.searchGooglePlaces(trimmed));
     }
 
@@ -157,8 +209,10 @@ export class GoogleMapsService {
     const region = (this.config()?.region || 'mx').toLowerCase();
     this.ngZone.run(() => this.googleError.set(null));
 
+    const placesNs = this.getPlacesNamespace();
+
     // 1. Places API (New)
-    const AutocompleteSuggestion = window.google?.maps?.places?.AutocompleteSuggestion;
+    const AutocompleteSuggestion = placesNs?.AutocompleteSuggestion;
     if (AutocompleteSuggestion?.fetchAutocompleteSuggestions) {
       try {
         const req: Record<string, unknown> = {
@@ -198,8 +252,8 @@ export class GoogleMapsService {
     }
 
     // 2. Legacy Places API (AutocompleteService)
-    if (window.google?.maps?.places?.AutocompleteService) {
-      const service = new window.google.maps.places.AutocompleteService();
+    if (placesNs?.AutocompleteService) {
+      const service = new placesNs.AutocompleteService();
       const request: Record<string, unknown> = {
         input,
         language: 'es',
@@ -262,10 +316,11 @@ export class GoogleMapsService {
       }
 
       // Legacy PlacesService
-      if (suggestion.place_id && window.google?.maps?.places?.PlacesService) {
+      const placesNs = this.getPlacesNamespace();
+      if (suggestion.place_id && placesNs?.PlacesService) {
         return new Promise((resolve) => {
           const dummyDiv = document.createElement('div');
-          const placesService = new window.google.maps.places.PlacesService(dummyDiv);
+          const placesService = new placesNs.PlacesService(dummyDiv);
           placesService.getDetails(
             {
               placeId: suggestion.place_id,
