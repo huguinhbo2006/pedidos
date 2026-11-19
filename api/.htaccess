@@ -1,8 +1,20 @@
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    # Bloquear acceso directo desde el dominio principal a cualquier ruta fuera de public/
-    RewriteCond %{REQUEST_URI} ^/api-pedidos/(?!public/) [NC]
+
+    # Preservar header Authorization para Sanctum Bearer tokens
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # Bloquear acceso directo desde el dominio principal (taqueriamary.com/api-pedidos/...)
+    RewriteCond %{REQUEST_URI} ^/api-pedidos/ [NC]
     RewriteRule .* - [F,L]
+
+    # Bloquear archivos y carpetas internas de Laravel
+    RewriteRule ^(\.env|artisan|composer\.(json|lock)|phpunit\.xml|package\.json|vite\.config\.js) - [F,L]
+    RewriteRule ^(app|bootstrap|config|database|resources|routes|storage|tests|vendor)(/|$) - [F,L]
+
+    # Redirigir internamente el tráfico del subdominio hacia public/ sin bucle
+    RewriteRule ^(?!public/)(.*)$ public/$1 [L]
 </IfModule>
 
 <FilesMatch "^\.env|\.sqlite">

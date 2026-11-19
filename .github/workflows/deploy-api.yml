@@ -91,7 +91,7 @@ jobs:
             cd "$TARGET"
 
             tar -xzf api-pedidos-dist.tar.gz
-            rm -f api-pedidos-dist.tar.gz
+            rm -f api-pedidos-dist.tar.gz default.php
 
             mkdir -p storage/framework/sessions storage/framework/views storage/framework/cache/data storage/logs bootstrap/cache database
             chmod -R 775 storage bootstrap/cache database
