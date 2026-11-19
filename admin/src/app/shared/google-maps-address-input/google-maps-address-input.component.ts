@@ -3,6 +3,7 @@ import {
   ElementRef,
   EventEmitter,
   Input,
+  NgZone,
   OnChanges,
   OnDestroy,
   OnInit,
@@ -34,6 +35,7 @@ export interface SelectedAddressPayload {
 })
 export class GoogleMapsAddressInputComponent implements OnInit, OnChanges, OnDestroy {
   readonly mapsService = inject(GoogleMapsService);
+  private readonly ngZone = inject(NgZone);
 
   @Input() address = '';
   @Input() latitude: number | null = null;
@@ -74,9 +76,11 @@ export class GoogleMapsAddressInputComponent implements OnInit, OnChanges, OnDes
         switchMap((q) => this.mapsService.searchAddresses(q))
       )
       .subscribe((results) => {
-        this.searching.set(false);
-        this.suggestions.set(results);
-        this.dropdownOpen.set(results.length > 0);
+        this.ngZone.run(() => {
+          this.searching.set(false);
+          this.suggestions.set(results);
+          this.dropdownOpen.set(results.length > 0);
+        });
       });
   }
 
@@ -113,26 +117,41 @@ export class GoogleMapsAddressInputComponent implements OnInit, OnChanges, OnDes
   }
 
   closeDropdownDelayed(): void {
-    setTimeout(() => this.dropdownOpen.set(false), 180);
+    setTimeout(() => this.dropdownOpen.set(false), 200);
   }
 
   async selectSuggestion(suggestion: AddressSuggestion): Promise<void> {
     this.dropdownOpen.set(false);
-    this.searching.set(true);
 
-    const details = await this.mapsService.resolveSuggestionDetails(suggestion);
-    this.searching.set(false);
-    this.queryText = details.address;
-
+    // Immediate selection so UI updates instantly even before details fetch completes
+    const initialAddress = suggestion.description || suggestion.main_text;
+    this.queryText = initialAddress;
     this.addressChange.emit({
-      address: details.address,
-      place_id: details.place_id,
-      latitude: details.latitude,
-      longitude: details.longitude,
+      address: initialAddress,
+      place_id: suggestion.place_id,
+      latitude: suggestion.latitude,
+      longitude: suggestion.longitude,
     });
 
-    if (details.latitude != null && details.longitude != null) {
-      setTimeout(() => this.renderMapPin(details.latitude!, details.longitude!), 40);
+    this.searching.set(true);
+    try {
+      const details = await this.mapsService.resolveSuggestionDetails(suggestion);
+      this.ngZone.run(() => {
+        this.searching.set(false);
+        this.queryText = details.address || initialAddress;
+        this.addressChange.emit({
+          address: details.address || initialAddress,
+          place_id: details.place_id ?? suggestion.place_id,
+          latitude: details.latitude,
+          longitude: details.longitude,
+        });
+
+        if (details.latitude != null && details.longitude != null) {
+          setTimeout(() => this.renderMapPin(details.latitude!, details.longitude!), 40);
+        }
+      });
+    } catch {
+      this.ngZone.run(() => this.searching.set(false));
     }
   }
 
@@ -161,11 +180,13 @@ export class GoogleMapsAddressInputComponent implements OnInit, OnChanges, OnDes
       this.markerInstance.addListener('dragend', () => {
         const pos = this.markerInstance.getPosition();
         if (pos) {
-          this.addressChange.emit({
-            address: this.queryText,
-            place_id: this.placeId,
-            latitude: pos.lat(),
-            longitude: pos.lng(),
+          this.ngZone.run(() => {
+            this.addressChange.emit({
+              address: this.queryText,
+              place_id: this.placeId,
+              latitude: pos.lat(),
+              longitude: pos.lng(),
+            });
           });
         }
       });

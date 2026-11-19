@@ -117,6 +117,10 @@
 }
 
 .suggestion-item {
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
   display: flex;
   align-items: center;
   gap: 0.65rem;

@@ -1,4 +1,4 @@
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, NgZone, inject, signal } from '@angular/core';
 import { Observable, from, map, of, catchError } from 'rxjs';
 import { ApiService } from './api.service';
 import { AddressSuggestion, MapsConfig } from '../models/api.models';
@@ -20,6 +20,7 @@ export interface PlaceDetailsResult {
 @Injectable({ providedIn: 'root' })
 export class GoogleMapsService {
   private readonly api = inject(ApiService);
+  private readonly ngZone = inject(NgZone);
 
   private scriptLoadPromise: Promise<boolean> | null = null;
   private loadedKey: string | null = null;
@@ -38,7 +39,7 @@ export class GoogleMapsService {
       };
       this.config.set(localCfg);
       const ok = await this.loadGoogleScript(environment.googleMapsApiKey, 'mx', forceReload);
-      this.googleReady.set(ok);
+      this.ngZone.run(() => this.googleReady.set(ok));
       return localCfg;
     }
 
@@ -60,7 +61,7 @@ export class GoogleMapsService {
           const effectiveKey = cfg.api_key || null;
           if (effectiveKey) {
             const ok = await this.loadGoogleScript(effectiveKey, cfg.region || 'mx', forceReload);
-            this.googleReady.set(ok);
+            this.ngZone.run(() => this.googleReady.set(ok));
           } else {
             this.googleReady.set(false);
             this.googleError.set(null);
@@ -103,18 +104,29 @@ export class GoogleMapsService {
       }
       script.src = `https://maps.googleapis.com/maps/api/js?${params.toString()}`;
 
-      script.onload = () => {
-        if (window.google?.maps?.places) {
-          resolve(true);
-        } else {
-          this.googleError.set('Google Maps cargó sin la librería Places.');
-          resolve(false);
+      script.onload = async () => {
+        try {
+          if (window.google?.maps?.importLibrary) {
+            await window.google.maps.importLibrary('places');
+          }
+        } catch {
+          // Ignore and check places object directly
         }
+        this.ngZone.run(() => {
+          if (window.google?.maps?.places) {
+            resolve(true);
+          } else {
+            this.googleError.set('Google Maps cargó sin la librería Places.');
+            resolve(false);
+          }
+        });
       };
 
       script.onerror = () => {
-        this.googleError.set('No se pudo cargar el script de Google Maps. Verifica tu API Key o conexión.');
-        resolve(false);
+        this.ngZone.run(() => {
+          this.googleError.set('No se pudo cargar el script de Google Maps. Verifica tu API Key o conexión.');
+          resolve(false);
+        });
       };
 
       document.head.appendChild(script);
@@ -133,7 +145,6 @@ export class GoogleMapsService {
       return from(this.searchGooglePlaces(trimmed));
     }
 
-    // Fallback live search when Google Maps API Key has not been configured yet
     return this.api.fallbackAddressSearch(trimmed).pipe(
       map((res) => res.results ?? []),
       catchError(() => of([]))
@@ -142,9 +153,9 @@ export class GoogleMapsService {
 
   private async searchGooglePlaces(input: string): Promise<AddressSuggestion[]> {
     const region = (this.config()?.region || 'mx').toLowerCase();
-    this.googleError.set(null);
+    this.ngZone.run(() => this.googleError.set(null));
 
-    // 1. Try Places API (New) — standard for Google Cloud projects created since 2025
+    // 1. Places API (New)
     const AutocompleteSuggestion = window.google?.maps?.places?.AutocompleteSuggestion;
     if (AutocompleteSuggestion?.fetchAutocompleteSuggestions) {
       try {
@@ -158,26 +169,33 @@ export class GoogleMapsService {
 
         const { suggestions } = await AutocompleteSuggestion.fetchAutocompleteSuggestions(req);
         if (Array.isArray(suggestions)) {
-          return suggestions
-            .map((s: any) => s?.placePrediction)
-            .filter(Boolean)
-            .map((pred: any) => ({
-              description: pred.text?.text ?? '',
-              main_text: pred.mainText?.text ?? pred.text?.text ?? '',
-              secondary_text: pred.secondaryText?.text ?? '',
-              place_id: pred.placeId ?? null,
-              latitude: null,
-              longitude: null,
-              source: 'google' as const,
-              placePrediction: pred,
-            }));
+          return this.ngZone.run(() =>
+            suggestions
+              .map((s: any) => s?.placePrediction)
+              .filter(Boolean)
+              .map((pred: any) => {
+                const fullText = pred.text?.text ?? pred.text?.toString?.() ?? '';
+                const mainText = pred.mainText?.text ?? pred.mainText?.toString?.() ?? fullText;
+                const secondaryText = pred.secondaryText?.text ?? pred.secondaryText?.toString?.() ?? '';
+                return {
+                  description: fullText || mainText,
+                  main_text: mainText,
+                  secondary_text: secondaryText,
+                  place_id: pred.placeId ?? null,
+                  latitude: null,
+                  longitude: null,
+                  source: 'google' as const,
+                  placePrediction: pred,
+                };
+              })
+          );
         }
       } catch {
-        // Fall through to legacy AutocompleteService if project only has legacy Places API enabled
+        // Fall through to legacy AutocompleteService
       }
     }
 
-    // 2. Legacy Places API fallback (AutocompleteService)
+    // 2. Legacy Places API (AutocompleteService)
     if (window.google?.maps?.places?.AutocompleteService) {
       const service = new window.google.maps.places.AutocompleteService();
       const request: Record<string, unknown> = {
@@ -190,26 +208,28 @@ export class GoogleMapsService {
 
       return new Promise<AddressSuggestion[]>((resolve) => {
         service.getPlacePredictions(request, (predictions: any[] | null, status: string) => {
-          if (status === 'OK' && Array.isArray(predictions)) {
-            resolve(
-              predictions.map((p) => ({
-                description: p.description,
-                main_text: p.structured_formatting?.main_text ?? p.description,
-                secondary_text: p.structured_formatting?.secondary_text ?? '',
-                place_id: p.place_id ?? null,
-                latitude: null,
-                longitude: null,
-                source: 'google' as const,
-              }))
-            );
-            return;
-          }
-          if (status === 'REQUEST_DENIED' || status === 'OVER_QUERY_LIMIT') {
-            this.googleError.set(
-              `Google Maps Places respondió: ${status}. Verifica que "Places API (New)" y "Maps JavaScript API" estén activas con facturación habilitada.`
-            );
-          }
-          resolve([]);
+          this.ngZone.run(() => {
+            if (status === 'OK' && Array.isArray(predictions)) {
+              resolve(
+                predictions.map((p) => ({
+                  description: p.description,
+                  main_text: p.structured_formatting?.main_text ?? p.description,
+                  secondary_text: p.structured_formatting?.secondary_text ?? '',
+                  place_id: p.place_id ?? null,
+                  latitude: null,
+                  longitude: null,
+                  source: 'google' as const,
+                }))
+              );
+              return;
+            }
+            if (status === 'REQUEST_DENIED' || status === 'OVER_QUERY_LIMIT') {
+              this.googleError.set(
+                `Google Maps Places respondió: ${status}. Verifica que "Places API (New)" y "Maps JavaScript API" estén activas.`
+              );
+            }
+            resolve([]);
+          });
         });
       });
     }
@@ -224,16 +244,18 @@ export class GoogleMapsService {
         try {
           const place = suggestion.placePrediction.toPlace();
           await place.fetchFields({ fields: ['formattedAddress', 'location', 'id'] });
-          const lat = place.location?.lat?.() ?? null;
-          const lng = place.location?.lng?.() ?? null;
-          return {
-            address: place.formattedAddress || suggestion.description,
-            place_id: place.id || suggestion.place_id,
-            latitude: typeof lat === 'number' ? lat : null,
-            longitude: typeof lng === 'number' ? lng : null,
-          };
+          return this.ngZone.run(() => {
+            const lat = place.location?.lat?.() ?? null;
+            const lng = place.location?.lng?.() ?? null;
+            return {
+              address: place.formattedAddress || suggestion.description,
+              place_id: place.id || suggestion.place_id,
+              latitude: typeof lat === 'number' ? lat : null,
+              longitude: typeof lng === 'number' ? lng : null,
+            };
+          });
         } catch {
-          // Fall back to legacy or raw suggestion
+          // Fall back cleanly
         }
       }
 
@@ -249,22 +271,24 @@ export class GoogleMapsService {
               language: 'es',
             },
             (place: any, status: string) => {
-              if (status === 'OK' && place) {
-                const lat = place.geometry?.location?.lat?.() ?? null;
-                const lng = place.geometry?.location?.lng?.() ?? null;
+              this.ngZone.run(() => {
+                if (status === 'OK' && place) {
+                  const lat = place.geometry?.location?.lat?.() ?? null;
+                  const lng = place.geometry?.location?.lng?.() ?? null;
+                  resolve({
+                    address: place.formatted_address || suggestion.description,
+                    place_id: place.place_id || suggestion.place_id,
+                    latitude: typeof lat === 'number' ? lat : null,
+                    longitude: typeof lng === 'number' ? lng : null,
+                  });
+                  return;
+                }
                 resolve({
-                  address: place.formatted_address || suggestion.description,
-                  place_id: place.place_id || suggestion.place_id,
-                  latitude: typeof lat === 'number' ? lat : null,
-                  longitude: typeof lng === 'number' ? lng : null,
+                  address: suggestion.description,
+                  place_id: suggestion.place_id,
+                  latitude: suggestion.latitude,
+                  longitude: suggestion.longitude,
                 });
-                return;
-              }
-              resolve({
-                address: suggestion.description,
-                place_id: suggestion.place_id,
-                latitude: suggestion.latitude,
-                longitude: suggestion.longitude,
               });
             }
           );

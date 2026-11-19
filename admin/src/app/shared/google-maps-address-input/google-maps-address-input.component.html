@@ -35,21 +35,23 @@
   }
 
   @if (dropdownOpen() && suggestions().length > 0) {
-    <ul class="suggestions-dropdown" role="listbox">
-      @for (item of suggestions(); track item.description) {
-        <li
-          class="suggestion-item"
-          role="option"
-          (mousedown)="selectSuggestion(item)"
-        >
-          <span class="pin">📌</span>
-          <div class="suggestion-text">
-            <strong>{{ item.main_text }}</strong>
-            @if (item.secondary_text) {
-              <small>{{ item.secondary_text }}</small>
-            }
-          </div>
-          <span class="source-tag">{{ item.source === 'google' ? 'Google' : 'Mapa' }}</span>
+    <ul class="suggestions-dropdown" role="listbox" (mousedown)="$event.preventDefault()">
+      @for (item of suggestions(); track $index) {
+        <li role="option">
+          <button
+            type="button"
+            class="suggestion-item"
+            (click)="selectSuggestion(item)"
+          >
+            <span class="pin">📌</span>
+            <div class="suggestion-text">
+              <strong>{{ item.main_text }}</strong>
+              @if (item.secondary_text) {
+                <small>{{ item.secondary_text }}</small>
+              }
+            </div>
+            <span class="source-tag">{{ item.source === 'google' ? 'Google' : 'Mapa' }}</span>
+          </button>
         </li>
       }
     </ul>
