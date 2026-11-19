@@ -83,7 +83,14 @@ import { Order } from '../../core/models/api.models';
               </div>
 
               <div class="hist-foot">
-                <strong class="total">{{ formatCurrency(order.total) }}</strong>
+                <div class="total-wrap">
+                  <strong class="total">{{ formatCurrency(order.total) }}</strong>
+                  @if (order.promo_discount_amount > 0 || order.manual_discount_amount > 0) {
+                    <small class="discount-tag">
+                      Descuentos: − {{ formatCurrency((order.promo_discount_amount || 0) + (order.manual_discount_amount || 0)) }}
+                    </small>
+                  }
+                </div>
                 <div class="foot-right">
                   @if (order.delivered_at) {
                     <small class="delivered-at">Entregado: {{ order.delivered_at | date:'short' }}</small>
@@ -168,7 +175,9 @@ import { Order } from '../../core/models/api.models';
       align-items: center;
       border-top: 1px solid var(--border-light);
       padding-top: 0.55rem;
+      .total-wrap { display: flex; flex-direction: column; gap: 0.1rem; }
       .total { font-size: 1.1rem; font-weight: 800; color: var(--brand-primary); }
+      .discount-tag { font-size: 0.74rem; color: var(--brand-green); font-weight: 700; }
       .foot-right { display: flex; align-items: center; gap: 0.65rem; }
       .delivered-at { font-size: 0.78rem; color: var(--brand-green); font-weight: 600; }
     }

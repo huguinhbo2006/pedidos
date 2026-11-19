@@ -292,6 +292,14 @@
             <button
               type="button"
               class="mode-btn"
+              [class.active]="catalogMode() === 'combos'"
+              (click)="catalogMode.set('combos')"
+            >
+              🎁 Promos Precio Fijo ({{ comboPromotions().length }})
+            </button>
+            <button
+              type="button"
+              class="mode-btn"
               [class.active]="catalogMode() === 'products'"
               (click)="catalogMode.set('products')"
             >
@@ -329,9 +337,9 @@
             </div>
           }
 
-          @if (hasPackageInCart() && packagePromotions().length > 0) {
+          @if (qualifyingFreePromotions().length > 0) {
             <div class="pkg-promo-banner">
-              @for (promo of packagePromotions(); track promo.id) {
+              @for (promo of qualifyingFreePromotions(); track promo.id) {
                 <div class="promo-offer">
                   <div class="promo-offer-head">
                     <strong>🎁 {{ promo.name }}</strong>
@@ -342,15 +350,15 @@
                   }
 
                   <div class="promo-options-grid">
-                    @for (opt of promo.allowed_options; track opt) {
+                    @for (choice of getPromoRewardChoices(promo); track choice.key) {
                       <div class="promo-opt-item">
-                        <span>{{ opt }}</span>
+                        <span>{{ choice.label }}</span>
                         <div class="promo-opt-ctrl">
-                          <button type="button" (click)="adjustPromoGift(promo, opt, -1)">−</button>
-                          <strong>{{ getPromoOptQty(promo.id, opt) }}</strong>
+                          <button type="button" (click)="adjustPromoGift(promo, choice.key, -1)">−</button>
+                          <strong>{{ getPromoOptQty(promo.id, choice.key) }}</strong>
                           <button
                             type="button"
-                            (click)="adjustPromoGift(promo, opt, 1)"
+                            (click)="adjustPromoGift(promo, choice.key, 1)"
                             [disabled]="promoTotalSelected(promo) >= promo.max_quantity"
                           >
                             +
@@ -358,7 +366,7 @@
                           <button
                             type="button"
                             class="quick-all"
-                            (click)="fillPromoGift(promo, opt)"
+                            (click)="fillPromoGift(promo, choice.key)"
                           >
                             Todo ({{ promo.max_quantity }})
                           </button>
@@ -373,12 +381,35 @@
                       type="button"
                       class="btn btn-success btn-sm"
                       [disabled]="promoTotalSelected(promo) === 0"
-                      (click)="applyPackagePromotion(promo)"
+                      (click)="applyFreeProductPromotion(promo)"
                     >
                       🎁 Agregar Regalo al Pedido ($0.00)
                     </button>
                   </div>
                 </div>
+              }
+            </div>
+          }
+
+          @if (qualifyingDiscountPromotions().length > 0) {
+            <div class="pkg-promo-banner">
+              @for (item of qualifyingDiscountPromotions(); track item.promo.id) {
+                <label class="promo-offer discount-offer" [class.selected]="isDiscountPromoSelected(item.promo.id)">
+                  <div class="promo-discount-row">
+                    <input
+                      type="checkbox"
+                      [checked]="isDiscountPromoSelected(item.promo.id)"
+                      (change)="toggleDiscountPromo(item.promo.id)"
+                    />
+                    <div class="discount-info">
+                      <strong>💸 {{ item.promo.name }}</strong>
+                      @if (item.promo.description) {
+                        <small>{{ item.promo.description }}</small>
+                      }
+                    </div>
+                    <span class="discount-pill">− {{ formatCurrency(item.discount) }}</span>
+                  </div>
+                </label>
               }
             </div>
           }
@@ -412,6 +443,38 @@
                       (click)="openPackageBuilder(pkg)"
                     >
                       ⚙️ Escoger sabores y agregar
+                    </button>
+                  </div>
+                }
+              </div>
+            }
+          } @else if (catalogMode() === 'combos') {
+            @if (comboPromotions().length === 0) {
+              <p class="muted-msg">No hay promociones de precio fijo activas configuradas.</p>
+            } @else {
+              <div class="packages-grid">
+                @for (promo of comboPromotions(); track promo.id) {
+                  <div class="package-tile combo-tile">
+                    <div class="pkg-info">
+                      <div class="pkg-title-row">
+                        <strong>🎁 {{ promo.name }}</strong>
+                        <span class="pkg-price">{{ formatCurrency(promo.fixed_price ?? 0) }}</span>
+                      </div>
+                      @if (promo.description) {
+                        <p>{{ promo.description }}</p>
+                      }
+                      <div class="pkg-groups-tags">
+                        @for (ci of promo.combo_items ?? []; track ci.product_id) {
+                          <span class="grp-tag">{{ ci.quantity }}x {{ ci.label }}</span>
+                        }
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      class="btn btn-gold"
+                      (click)="addComboPromoToCart(promo)"
+                    >
+                      🎁 Agregar combo ({{ formatCurrency(promo.fixed_price ?? 0) }})
                     </button>
                   </div>
                 }
@@ -631,11 +694,79 @@
           ></textarea>
         </div>
 
+        <div class="manual-discount-box">
+          <div class="md-head">
+            <span>💸 Descuento manual directo</span>
+            <div class="md-pills">
+              <button
+                type="button"
+                class="md-pill"
+                [class.active]="manualDiscountType() === null"
+                (click)="setManualDiscountType(null)"
+              >
+                No
+              </button>
+              <button
+                type="button"
+                class="md-pill"
+                [class.active]="manualDiscountType() === 'fixed'"
+                (click)="setManualDiscountType('fixed')"
+              >
+                $ Pesos
+              </button>
+              <button
+                type="button"
+                class="md-pill"
+                [class.active]="manualDiscountType() === 'percent'"
+                (click)="setManualDiscountType('percent')"
+              >
+                % Porc.
+              </button>
+            </div>
+          </div>
+
+          @if (manualDiscountType()) {
+            <div class="md-inputs">
+              <input
+                type="number"
+                min="0"
+                [max]="manualDiscountType() === 'percent' ? 100 : 99999"
+                step="0.5"
+                [ngModel]="manualDiscountValue()"
+                (ngModelChange)="onManualDiscountValueChange($event)"
+                [placeholder]="manualDiscountType() === 'percent' ? '% desc' : '$ monto'"
+              />
+              <input
+                type="text"
+                [ngModel]="manualDiscountReason()"
+                (ngModelChange)="manualDiscountReason.set($event)"
+                placeholder="Motivo (opcional)"
+              />
+            </div>
+          }
+        </div>
+
         <div class="totals-box">
           <div class="tot-row">
             <span>Subtotal productos y paquetes</span>
-            <span>{{ formatCurrency(orderTotal()) }}</span>
+            <span>{{ formatCurrency(orderSubtotal()) }}</span>
           </div>
+          @for (q of selectedQualifyingDiscounts(); track q.promo.id) {
+            <div class="tot-row promo-row">
+              <span>💸 {{ q.promo.name }}</span>
+              <span>− {{ formatCurrency(q.discount) }}</span>
+            </div>
+          }
+          @if (manualDiscountAmount() > 0) {
+            <div class="tot-row promo-row">
+              <span>
+                💸 Descuento manual
+                @if (manualDiscountType() === 'percent') { ({{ manualDiscountValue() }}%) }
+                @if (manualDiscountReason().trim()) { · {{ manualDiscountReason() }} }
+              </span>
+              <span>− {{ formatCurrency(manualDiscountAmount()) }}</span>
+            </div>
+          }
           @if (promoSavings() > 0) {
             <div class="tot-row promo-row">
               <span>🎁 Valor en regalos / promos</span>
@@ -644,7 +775,7 @@
           }
           <div class="tot-row grand-total">
             <span>TOTAL DEL PEDIDO</span>
-            <strong>{{ formatCurrency(orderTotal()) }}</strong>
+            <strong>{{ formatCurrency(finalOrderTotal()) }}</strong>
           </div>
         </div>
 
@@ -659,7 +790,7 @@
             [disabled]="submitting() || cart().length === 0"
             (click)="submitOrder(false)"
           >
-            {{ submitting() ? 'Guardando pedido...' : '✅ Guardar Pedido (' + formatCurrency(orderTotal()) + ')' }}
+            {{ submitting() ? 'Guardando pedido...' : '✅ Guardar Pedido (' + formatCurrency(finalOrderTotal()) + ')' }}
           </button>
 
           <button

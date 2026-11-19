@@ -12,6 +12,7 @@ use App\Models\PackageGroupOption;
 use App\Models\Product;
 use App\Models\Promotion;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class TaqueriaMaryMenuSeeder
 {
@@ -291,16 +292,28 @@ class TaqueriaMaryMenuSeeder
         ]);
 
         // Promoción oficial de Taquería Mary
-        Promotion::create([
+        $promoData = [
             'name' => '¡5 Litros de Agua Extra GRATIS!',
             'description' => 'En la compra de cualquier paquete: ¡5 litros de agua extra gratis (Jamaica u Horchata)!',
             'applies_to_packages' => true,
             'max_quantity' => 5,
             'allowed_options' => [
-                'Agua de Horchata (1 Litro)',
-                'Agua de Jamaica (1 Litro)',
+                $products['agua_horchata']->name,
+                $products['agua_jamaica']->name,
             ],
             'is_active' => true,
-        ]);
+        ];
+
+        if (Schema::hasColumn('promotions', 'type')) {
+            $promoData['type'] = 'free_product';
+            $promoData['target_scope'] = 'all_packages';
+            $promoData['min_quantity'] = 1;
+            $promoData['reward_products'] = [
+                ['product_id' => $products['agua_horchata']->id, 'label' => $products['agua_horchata']->name],
+                ['product_id' => $products['agua_jamaica']->id, 'label' => $products['agua_jamaica']->name],
+            ];
+        }
+
+        Promotion::create($promoData);
     }
 }

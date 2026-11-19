@@ -8,6 +8,7 @@ use App\Models\CustomerAddress;
 use App\Models\Order;
 use App\Models\Package;
 use App\Models\Product;
+use App\Models\Promotion;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -117,10 +118,16 @@ class OrderController extends Controller
             'delivery_lng' => ['nullable', 'numeric', 'between:-180,180'],
             'address_label' => ['nullable', 'string', 'max:60'],
             'notes' => ['nullable', 'string', 'max:1000'],
+            'applied_promotion_ids' => ['nullable', 'array'],
+            'applied_promotion_ids.*' => ['integer', 'exists:promotions,id'],
+            'manual_discount_type' => ['nullable', 'in:fixed,percent'],
+            'manual_discount_value' => ['nullable', 'numeric', 'min:0', 'max:999999'],
+            'manual_discount_reason' => ['nullable', 'string', 'max:150'],
             'items' => ['required', 'array', 'min:1'],
-            'items.*.item_type' => ['sometimes', 'in:product,package,promo_custom'],
+            'items.*.item_type' => ['sometimes', 'in:product,package,promo_combo,promo_custom'],
             'items.*.product_id' => ['nullable', 'integer'],
             'items.*.package_id' => ['nullable', 'integer'],
+            'items.*.promotion_id' => ['nullable', 'integer'],
             'items.*.product_name' => ['nullable', 'string', 'max:150'],
             'items.*.quantity' => ['required', 'integer', 'min:1', 'max:999'],
             'items.*.is_promo' => ['required', 'boolean'],
@@ -213,12 +220,20 @@ class OrderController extends Controller
                 ]);
             }
 
-            // 3. Validate items (products, packages, custom gifts) & compute totals securely
+            // 3. Validate items (products, packages, fixed-price combos, gifts) & compute subtotal
             $productIds = collect($data['items'])->pluck('product_id')->filter()->unique()->values();
             $productsById = Product::whereIn('id', $productIds)->get()->keyBy('id');
 
             $packageIds = collect($data['items'])->pluck('package_id')->filter()->unique()->values();
             $packagesById = Package::with('groups.options')->whereIn('id', $packageIds)->get()->keyBy('id');
+
+            $comboPromoIds = collect($data['items'])
+                ->filter(fn ($i) => ($i['item_type'] ?? null) === 'promo_combo')
+                ->pluck('promotion_id')
+                ->filter()
+                ->unique()
+                ->values();
+            $comboPromosById = Promotion::whereIn('id', $comboPromoIds)->get()->keyBy('id');
 
             $preparedItems = [];
             $subtotal = 0.0;
@@ -229,6 +244,7 @@ class OrderController extends Controller
                 $qty = (int) $rawItem['quantity'];
                 $productId = $rawItem['product_id'] ?? null;
                 $packageId = $rawItem['package_id'] ?? null;
+                $promotionId = $rawItem['promotion_id'] ?? null;
                 $itemType = $rawItem['item_type'] ?? ($packageId ? 'package' : ($productId ? 'product' : 'promo_custom'));
                 $packageDetails = null;
 
@@ -250,6 +266,24 @@ class OrderController extends Controller
                     $productName = $package->name;
                     $unitPrice = round((float) $package->base_price + $extraCostPerPackage, 2);
                     $productId = null;
+                } elseif ($itemType === 'promo_combo') {
+                    $promoCombo = $promotionId ? $comboPromosById->get($promotionId) : null;
+                    if (! $promoCombo || $promoCombo->type !== 'fixed_price_combo') {
+                        throw ValidationException::withMessages([
+                            "items.{$index}.promotion_id" => ['El combo promocional seleccionado no existe o no es válido.'],
+                        ]);
+                    }
+
+                    $productName = $promoCombo->name;
+                    $unitPrice = round((float) ($promoCombo->fixed_price ?? 0), 2);
+                    $packageDetails = collect($promoCombo->combo_items ?? [])->map(fn ($ci) => [
+                        'group' => 'Combo Promoción',
+                        'label' => $ci['label'] ?? '',
+                        'quantity' => (int) ($ci['quantity'] ?? 1),
+                        'extra_price' => 0.0,
+                    ])->values()->all();
+                    $productId = null;
+                    $packageId = null;
                 } elseif ($productId) {
                     $product = $productsById->get($productId);
                     if (! $product) {
@@ -288,6 +322,7 @@ class OrderController extends Controller
                 $preparedItems[] = [
                     'product_id' => $productId,
                     'package_id' => $packageId,
+                    'promotion_id' => $promotionId,
                     'item_type' => $itemType,
                     'product_name' => $productName,
                     'unit_price' => $unitPrice,
@@ -302,7 +337,38 @@ class OrderController extends Controller
             $subtotal = round($subtotal, 2);
             $promoSavings = round($promoSavings, 2);
 
-            // 4. Generate unique daily order number
+            // 4. Evaluate Type 2 Promotional Discounts ($ or %)
+            $requestedPromoIds = collect($data['applied_promotion_ids'] ?? [])->unique()->values();
+            [$promoDiscountAmount, $appliedPromotions] = $this->calculatePromotionalDiscounts(
+                $requestedPromoIds->all(),
+                $preparedItems,
+                $subtotal
+            );
+
+            // 5. Evaluate Manual Discount ($ or %)
+            $remainingAfterPromos = max(0.0, round($subtotal - $promoDiscountAmount, 2));
+            $manualType = $data['manual_discount_type'] ?? null;
+            $manualValue = round((float) ($data['manual_discount_value'] ?? 0), 2);
+            $manualReason = isset($data['manual_discount_reason']) && trim($data['manual_discount_reason']) !== ''
+                ? trim($data['manual_discount_reason'])
+                : null;
+            $manualDiscountAmount = 0.0;
+
+            if ($manualType === 'percent' && $manualValue > 0) {
+                $pct = min(100.0, $manualValue);
+                $manualDiscountAmount = round($remainingAfterPromos * ($pct / 100.0), 2);
+                $manualValue = $pct;
+            } elseif ($manualType === 'fixed' && $manualValue > 0) {
+                $manualDiscountAmount = min($remainingAfterPromos, $manualValue);
+            } else {
+                $manualType = null;
+                $manualValue = 0.0;
+                $manualReason = null;
+            }
+
+            $finalTotal = max(0.0, round($subtotal - $promoDiscountAmount - $manualDiscountAmount, 2));
+
+            // 6. Generate unique daily order number
             $todayPrefix = 'TD-' . Carbon::today()->format('Ymd') . '-';
             $todaySeq = Order::whereBetween('created_at', [
                 Carbon::today()->startOfDay(),
@@ -314,7 +380,7 @@ class OrderController extends Controller
                 $todaySeq++;
             } while (Order::where('order_number', $orderNumber)->exists());
 
-            // 5. Create Order & Items
+            // 7. Create Order & Items
             $order = Order::create([
                 'order_number' => $orderNumber,
                 'customer_id' => $customer->id,
@@ -328,7 +394,13 @@ class OrderController extends Controller
                 'delivery_lng' => $lng,
                 'subtotal' => $subtotal,
                 'promo_savings' => $promoSavings,
-                'total' => $subtotal,
+                'promo_discount_amount' => $promoDiscountAmount,
+                'applied_promotions' => ! empty($appliedPromotions) ? $appliedPromotions : null,
+                'manual_discount_type' => $manualType,
+                'manual_discount_value' => $manualValue,
+                'manual_discount_amount' => $manualDiscountAmount,
+                'manual_discount_reason' => $manualReason,
+                'total' => $finalTotal,
                 'notes' => isset($data['notes']) && trim($data['notes']) !== '' ? trim($data['notes']) : null,
                 'is_delivered' => false,
                 'created_by' => $request->user()?->id,
@@ -373,6 +445,81 @@ class OrderController extends Controller
         ])->setPaper('letter', 'portrait');
 
         return $pdf->download("pedido-{$order->order_number}.pdf");
+    }
+
+    /**
+     * Validate and compute Type 2 promotional discounts ($ or %) server-side.
+     *
+     * @return array{0: float, 1: array<int, array<string, mixed>>}
+     */
+    private function calculatePromotionalDiscounts(array $promoIds, array $preparedItems, float $subtotal): array
+    {
+        if (empty($promoIds)) {
+            return [0.0, []];
+        }
+
+        $promos = Promotion::whereIn('id', $promoIds)
+            ->where('is_active', true)
+            ->where('type', 'discount')
+            ->get();
+
+        $paidItems = collect($preparedItems)->where('is_promo', false);
+        $totalDiscount = 0.0;
+        $applied = [];
+
+        foreach ($promos as $promo) {
+            $minQty = max(1, (int) ($promo->min_quantity ?? 1));
+            $minAmount = (float) ($promo->min_order_amount ?? 0);
+            $qualifyingBase = 0.0;
+            $qualifies = false;
+
+            if ($promo->target_scope === 'all_packages') {
+                $matching = $paidItems->where('item_type', 'package');
+                $qtySum = (int) $matching->sum('quantity');
+                $qualifyingBase = (float) $matching->sum('line_total');
+                $qualifies = $qtySum >= $minQty && $qualifyingBase >= $minAmount;
+            } elseif ($promo->target_scope === 'packages') {
+                $targetIds = collect($promo->target_package_ids ?? [])->map(fn ($id) => (int) $id)->all();
+                $matching = $paidItems->where('item_type', 'package')->whereIn('package_id', $targetIds);
+                $qtySum = (int) $matching->sum('quantity');
+                $qualifyingBase = (float) $matching->sum('line_total');
+                $qualifies = $qtySum >= $minQty && $qualifyingBase >= $minAmount;
+            } elseif ($promo->target_scope === 'products') {
+                $targetIds = collect($promo->target_product_ids ?? [])->map(fn ($id) => (int) $id)->all();
+                $matching = $paidItems->where('item_type', 'product')->whereIn('product_id', $targetIds);
+                $qtySum = (int) $matching->sum('quantity');
+                $qualifyingBase = (float) $matching->sum('line_total');
+                $qualifies = $qtySum >= $minQty && $qualifyingBase >= $minAmount;
+            } else {
+                // order_total
+                $qualifyingBase = $subtotal;
+                $qualifies = $subtotal > 0 && $subtotal >= $minAmount;
+            }
+
+            if (! $qualifies) {
+                throw ValidationException::withMessages([
+                    'applied_promotion_ids' => ["El pedido no cumple las condiciones para la promoción '{$promo->name}'."],
+                ]);
+            }
+
+            $val = (float) ($promo->discount_value ?? 0);
+            $amount = $promo->discount_type === 'percent'
+                ? round($qualifyingBase * (min(100.0, max(0.0, $val)) / 100.0), 2)
+                : min($qualifyingBase, round(max(0.0, $val), 2));
+
+            if ($amount > 0) {
+                $totalDiscount += $amount;
+                $applied[] = [
+                    'promotion_id' => $promo->id,
+                    'name' => $promo->name,
+                    'discount_type' => $promo->discount_type,
+                    'discount_value' => $val,
+                    'discount_amount' => $amount,
+                ];
+            }
+        }
+
+        return [min($subtotal, round($totalDiscount, 2)), $applied];
     }
 
     /**

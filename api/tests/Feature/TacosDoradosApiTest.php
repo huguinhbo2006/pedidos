@@ -363,6 +363,97 @@ class TacosDoradosApiTest extends TestCase
             ->assertJsonPath('has_google_maps_key', true);
     }
 
+    public function test_three_promotion_types_and_manual_order_discount(): void
+    {
+        $token = $this->authenticate();
+
+        $fiestaBasica = Package::where('name', 'Paquete Fiesta Básica')->firstOrFail();
+        $reunionFamiliar = Package::where('name', 'Paquete Reunión Familiar')->firstOrFail();
+        $tacoPapa = Product::where('name', 'Taco Dorado Normal de Papa (Con salsa, col y chile)')->firstOrFail();
+        $horchata = Product::where('name', 'Agua Fresca de Horchata (1 Litro)')->firstOrFail();
+
+        // Tipo 2: Descuento en % sobre paquetes específicos (5% en Fiesta Básica o Reunión Familiar)
+        $discountPromo = $this->withToken($token)
+            ->postJson('/api/promotions', [
+                'name' => '5% de descuento en paquetes familiares',
+                'description' => 'Descuento automático en Fiesta Básica y Reunión Familiar',
+                'type' => 'discount',
+                'target_scope' => 'packages',
+                'target_package_ids' => [$fiestaBasica->id, $reunionFamiliar->id],
+                'min_quantity' => 1,
+                'discount_type' => 'percent',
+                'discount_value' => 5,
+            ])
+            ->assertStatus(201)
+            ->json();
+
+        // Tipo 3: Combo Promocional a Precio Fijo ($280 por 50 tacos + 2L horchata)
+        $comboPromo = $this->withToken($token)
+            ->postJson('/api/promotions', [
+                'name' => 'Combo Promo 50 Tacos + 2L Agua',
+                'description' => 'Precio especial fijo',
+                'type' => 'fixed_price_combo',
+                'fixed_price' => 280,
+                'combo_items' => [
+                    ['product_id' => $tacoPapa->id, 'quantity' => 50],
+                    ['product_id' => $horchata->id, 'quantity' => 2],
+                ],
+            ])
+            ->assertStatus(201)
+            ->json();
+
+        $this->assertEquals(280, $comboPromo['fixed_price']);
+
+        // Orden combinando Paquete ($600) + Combo Promo ($280) + Descuento Tipo 2 (5% de $600 = $30) + Descuento Manual ($50)
+        // Subtotal = $880; Promo Discount = $30 -> remaining = $850; Manual = $50 -> Total = $800
+        $tacosGroup = $fiestaBasica->groups()->firstOrFail();
+        $papaOption = $tacosGroup->options()->where('label', 'like', '%Papa%')->firstOrFail();
+
+        $order = $this->withToken($token)
+            ->postJson('/api/orders', [
+                'customer_phone' => '3311112222',
+                'customer_name' => 'Luis Ramírez',
+                'delivery_address' => 'Calle Juárez 100',
+                'applied_promotion_ids' => [$discountPromo['id']],
+                'manual_discount_type' => 'fixed',
+                'manual_discount_value' => 50,
+                'manual_discount_reason' => 'Cliente frecuente',
+                'items' => [
+                    [
+                        'item_type' => 'package',
+                        'package_id' => $fiestaBasica->id,
+                        'quantity' => 1,
+                        'is_promo' => false,
+                        'package_details' => [
+                            [
+                                'group_id' => $tacosGroup->id,
+                                'option_id' => $papaOption->id,
+                                'group' => $tacosGroup->name,
+                                'label' => $papaOption->label,
+                                'quantity' => 100,
+                            ],
+                        ],
+                    ],
+                    [
+                        'item_type' => 'promo_combo',
+                        'promotion_id' => $comboPromo['id'],
+                        'quantity' => 1,
+                        'is_promo' => false,
+                    ],
+                ],
+            ])
+            ->assertStatus(201);
+
+        $this->assertEquals(880, $order->json('subtotal'));
+        $this->assertEquals(30, $order->json('promo_discount_amount'));
+        $this->assertEquals(50, $order->json('manual_discount_amount'));
+        $this->assertEquals(800, $order->json('total'));
+
+        // Verify PDF renders with promo & manual discounts
+        $pdfResp = $this->withToken($token)->get("/api/orders/{$order->json('id')}/pdf")->assertOk();
+        $this->assertStringStartsWith('%PDF-', $pdfResp->getContent());
+    }
+
     private function authenticate(): string
     {
         return $this->postJson('/api/login', [

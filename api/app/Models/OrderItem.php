@@ -11,6 +11,7 @@ class OrderItem extends Model
         'order_id',
         'product_id',
         'package_id',
+        'promotion_id',
         'item_type',
         'product_name',
         'unit_price',
@@ -45,5 +46,10 @@ class OrderItem extends Model
     public function package(): BelongsTo
     {
         return $this->belongsTo(Package::class);
+    }
+
+    public function promotion(): BelongsTo
+    {
+        return $this->belongsTo(Promotion::class);
     }
 }

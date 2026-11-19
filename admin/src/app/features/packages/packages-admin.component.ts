@@ -3,7 +3,16 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
-import { MealPackage, PackageGroup, Product, Promotion } from '../../core/models/api.models';
+import {
+  MealPackage,
+  PackageGroup,
+  Product,
+  Promotion,
+  PromotionComboItem,
+  PromotionRewardProduct,
+  PromotionTargetScope,
+  PromotionType,
+} from '../../core/models/api.models';
 
 @Component({
   selector: 'app-packages-admin',
@@ -14,7 +23,7 @@ import { MealPackage, PackageGroup, Product, Promotion } from '../../core/models
       <div class="page-header">
         <div>
           <h1>Paquetes y Promociones</h1>
-          <p class="subtitle">Configura paquetes con límites por grupo, sabores permitidos, cargos extra y regalos promocionales.</p>
+          <p class="subtitle">Configura paquetes con límites, productos gratis, descuentos en $ o % y combos a precio fijo.</p>
         </div>
 
         <div class="header-tabs">
@@ -116,10 +125,9 @@ import { MealPackage, PackageGroup, Product, Promotion } from '../../core/models
             <article class="item-card card" [class.inactive]="!promo.is_active">
               <div class="card-top">
                 <div>
-                  <h3>🎁 {{ promo.name }}</h3>
-                  <small class="promo-meta">
-                    {{ promo.applies_to_packages ? 'Aplica en compra de paquete' : 'Promoción general' }} · Máx. {{ promo.max_quantity }}
-                  </small>
+                  <span class="badge badge-promo mb-xs">{{ promoTypeLabel(promo.type) }}</span>
+                  <h3>{{ promo.name }}</h3>
+                  <small class="promo-meta">{{ promoScopeSummary(promo) }}</small>
                 </div>
                 <button
                   type="button"
@@ -135,11 +143,37 @@ import { MealPackage, PackageGroup, Product, Promotion } from '../../core/models
                 <p class="desc">{{ promo.description }}</p>
               }
 
-              @if (promo.allowed_options.length) {
-                <div class="opt-chips">
-                  @for (opt of promo.allowed_options; track opt) {
-                    <span class="opt-chip">{{ opt }}</span>
-                  }
+              @if (promo.type === 'free_product') {
+                <div class="group-mini">
+                  <div class="g-title"><strong>Regalos permitidos (máx. {{ promo.max_quantity }}):</strong></div>
+                  <div class="opt-chips">
+                    @for (r of (promo.reward_products || []); track r.product_id) {
+                      <span class="opt-chip">🎁 {{ r.label }}</span>
+                    } @empty {
+                      @for (opt of promo.allowed_options; track opt) {
+                        <span class="opt-chip">🎁 {{ opt }}</span>
+                      }
+                    }
+                  </div>
+                </div>
+              } @else if (promo.type === 'discount') {
+                <div class="promo-highlight-val">
+                  Descuento:
+                  <strong>
+                    {{ promo.discount_type === 'percent' ? (promo.discount_value + '%') : formatCurrency(promo.discount_value || 0) }}
+                  </strong>
+                </div>
+              } @else if (promo.type === 'fixed_price_combo') {
+                <div class="group-mini">
+                  <div class="g-title">
+                    <strong>Precio fijo combo:</strong>
+                    <span class="price-inline">{{ formatCurrency(promo.fixed_price || 0) }}</span>
+                  </div>
+                  <div class="opt-chips">
+                    @for (ci of (promo.combo_items || []); track $index) {
+                      <span class="opt-chip">{{ ci.quantity }}x {{ ci.label }}</span>
+                    }
+                  </div>
                 </div>
               }
 
@@ -269,10 +303,10 @@ import { MealPackage, PackageGroup, Product, Promotion } from '../../core/models
         </div>
       }
 
-      <!-- MODAL PROMOCIÓN -->
+      <!-- MODAL PROMOCIÓN (3 TIPOS) -->
       @if (showPromoModal()) {
         <div class="modal-backdrop" (click)="showPromoModal.set(false)">
-          <div class="modal-panel" (click)="$event.stopPropagation()">
+          <div class="modal-panel wide-modal" (click)="$event.stopPropagation()">
             <div class="modal-head">
               <h3>{{ editingPromo() ? 'Editar Promoción' : 'Nueva Promoción' }}</h3>
               <button type="button" class="close-btn" (click)="showPromoModal.set(false)">✕</button>
@@ -280,33 +314,207 @@ import { MealPackage, PackageGroup, Product, Promotion } from '../../core/models
 
             <div class="modal-scroll">
               <div class="form-field">
-                <label>Nombre de la promoción *</label>
-                <input type="text" [(ngModel)]="promoForm.name" placeholder="¡5 Litros de Agua Extra GRATIS!" />
+                <label>Tipo de promoción *</label>
+                <div class="promo-type-grid">
+                  <button
+                    type="button"
+                    class="ptype-btn"
+                    [class.active]="promoForm.type === 'free_product'"
+                    (click)="promoForm.type = 'free_product'"
+                  >
+                    <strong>🎁 Producto Gratis</strong>
+                    <small>Regalo por compra de paquete, producto o monto</small>
+                  </button>
+                  <button
+                    type="button"
+                    class="ptype-btn"
+                    [class.active]="promoForm.type === 'discount'"
+                    (click)="promoForm.type = 'discount'"
+                  >
+                    <strong>💸 Descuento ($ o %)</strong>
+                    <small>Descuento sobre paquete, producto o total</small>
+                  </button>
+                  <button
+                    type="button"
+                    class="ptype-btn"
+                    [class.active]="promoForm.type === 'fixed_price_combo'"
+                    (click)="promoForm.type = 'fixed_price_combo'"
+                  >
+                    <strong>📦 Combo Precio Fijo</strong>
+                    <small>Escoges productos y les das un total fijo</small>
+                  </button>
+                </div>
+              </div>
+
+              <div class="row-2">
+                <div class="form-field">
+                  <label>Nombre de la promoción *</label>
+                  <input type="text" [(ngModel)]="promoForm.name" placeholder="Ej. 5% desc. en paquetes o Combo 50 tacos" />
+                </div>
+                @if (promoForm.type === 'fixed_price_combo') {
+                  <div class="form-field">
+                    <label>Precio final fijo (MXN) *</label>
+                    <input type="number" step="1" min="0" [(ngModel)]="promoForm.fixed_price" />
+                  </div>
+                } @else if (promoForm.type === 'free_product') {
+                  <div class="form-field">
+                    <label>Cantidad máxima de regalo *</label>
+                    <input type="number" min="1" [(ngModel)]="promoForm.max_quantity" />
+                  </div>
+                } @else {
+                  <div class="form-field">
+                    <label>Tipo y valor de descuento *</label>
+                    <div class="inline-disc-edit">
+                      <select [(ngModel)]="promoForm.discount_type">
+                        <option value="percent">% Porcentaje</option>
+                        <option value="fixed">$ Pesos fijos</option>
+                      </select>
+                      <input type="number" step="0.5" min="0" [(ngModel)]="promoForm.discount_value" />
+                    </div>
+                  </div>
+                }
               </div>
 
               <div class="form-field">
-                <label>Descripción</label>
-                <textarea rows="2" [(ngModel)]="promoForm.description"></textarea>
+                <label>Descripción (opcional)</label>
+                <input type="text" [(ngModel)]="promoForm.description" placeholder="Detalles visibles al capturar el pedido..." />
               </div>
 
-              <div class="form-field">
-                <label>Cantidad máxima de regalo</label>
-                <input type="number" min="1" [(ngModel)]="promoForm.max_quantity" />
-              </div>
+              <!-- CONDICIÓN DE APLICACIÓN (para Tipo 1 y Tipo 2) -->
+              @if (promoForm.type === 'free_product' || promoForm.type === 'discount') {
+                <div class="group-box">
+                  <div class="row-2">
+                    <div class="form-field">
+                      <label>¿Sobre qué se aplica esta promoción?</label>
+                      <select [(ngModel)]="promoForm.target_scope">
+                        <option value="all_packages">Todos los paquetes</option>
+                        <option value="packages">Paquetes específicos</option>
+                        <option value="products">Productos específicos</option>
+                        <option value="order_total">Total del pedido (monto mínimo)</option>
+                      </select>
+                    </div>
 
-              <div class="form-field">
-                <label>Opciones a elegir (una por línea)</label>
-                <textarea
-                  rows="3"
-                  [(ngModel)]="promoOptionsText"
-                  placeholder="Agua de Horchata (1 Litro)&#10;Agua de Jamaica (1 Litro)"
-                ></textarea>
-              </div>
+                    @if (promoForm.target_scope === 'order_total') {
+                      <div class="form-field">
+                        <label>Monto mínimo del pedido (MXN)</label>
+                        <input type="number" min="0" step="10" [(ngModel)]="promoForm.min_order_amount" placeholder="500" />
+                      </div>
+                    } @else {
+                      <div class="form-field">
+                        <label>Cantidad mínima requerida</label>
+                        <input type="number" min="1" [(ngModel)]="promoForm.min_quantity" />
+                      </div>
+                    }
+                  </div>
 
-              <label class="checkbox-row">
-                <input type="checkbox" [(ngModel)]="promoForm.applies_to_packages" />
-                <span>Sugerir automáticamente al comprar un paquete</span>
-              </label>
+                  @if (promoForm.target_scope === 'packages') {
+                    <div class="check-grid-box">
+                      <small>Selecciona los paquetes a los que aplica:</small>
+                      <div class="check-grid">
+                        @for (pkg of packages(); track pkg.id) {
+                          <label class="check-pill" [class.checked]="isTargetPackageSelected(pkg.id)">
+                            <input
+                              type="checkbox"
+                              [checked]="isTargetPackageSelected(pkg.id)"
+                              (change)="toggleTargetPackage(pkg.id)"
+                            />
+                            <span>{{ pkg.name }} ({{ formatCurrency(pkg.base_price) }})</span>
+                          </label>
+                        }
+                      </div>
+                    </div>
+                  }
+
+                  @if (promoForm.target_scope === 'products') {
+                    <div class="check-grid-box">
+                      <small>Selecciona los productos del catálogo a los que aplica:</small>
+                      <div class="check-grid">
+                        @for (prod of products(); track prod.id) {
+                          <label class="check-pill" [class.checked]="isTargetProductSelected(prod.id)">
+                            <input
+                              type="checkbox"
+                              [checked]="isTargetProductSelected(prod.id)"
+                              (change)="toggleTargetProduct(prod.id)"
+                            />
+                            <span>{{ prod.name }} ({{ formatCurrency(prod.price) }})</span>
+                          </label>
+                        }
+                      </div>
+                    </div>
+                  }
+                </div>
+              }
+
+              <!-- PRODUCTOS DE REGALO (Tipo 1) -->
+              @if (promoForm.type === 'free_product') {
+                <div class="group-box">
+                  <div class="oe-head">
+                    <strong>Productos gratis que puede escoger el cliente:</strong>
+                    <button type="button" class="btn btn-outline btn-sm" (click)="addRewardProduct()">
+                      + Agregar producto regalo
+                    </button>
+                  </div>
+
+                  @for (rew of promoForm.reward_products; track $index; let ri = $index) {
+                    <div class="opt-edit-row">
+                      <select
+                        [ngModel]="rew.product_id"
+                        (ngModelChange)="onRewardProductChange(ri, $event)"
+                        class="product-select"
+                      >
+                        <option [ngValue]="0" disabled>-- Selecciona un producto del catálogo --</option>
+                        @for (catGroup of groupedProducts(); track catGroup.category) {
+                          <optgroup [label]="catGroup.category">
+                            @for (p of catGroup.items; track p.id) {
+                              <option [ngValue]="p.id">{{ p.name }} ({{ formatCurrency(p.price) }})</option>
+                            }
+                          </optgroup>
+                        }
+                      </select>
+                      <button type="button" class="btn btn-danger-ghost btn-sm" (click)="removeRewardProduct(ri)">✕</button>
+                    </div>
+                  }
+                </div>
+              }
+
+              <!-- PRODUCTOS DEL COMBO PRECIO FIJO (Tipo 3) -->
+              @if (promoForm.type === 'fixed_price_combo') {
+                <div class="group-box">
+                  <div class="oe-head">
+                    <strong>Productos incluidos en el combo promocional:</strong>
+                    <button type="button" class="btn btn-outline btn-sm" (click)="addComboItem()">
+                      + Agregar producto
+                    </button>
+                  </div>
+
+                  <div class="opt-col-labels">
+                    <span>Producto</span>
+                    <span class="extra-lbl">Cantidad</span>
+                    <span></span>
+                  </div>
+
+                  @for (ci of promoForm.combo_items; track $index; let idx = $index) {
+                    <div class="opt-edit-row">
+                      <select
+                        [ngModel]="ci.product_id"
+                        (ngModelChange)="onComboProductChange(idx, $event)"
+                        class="product-select"
+                      >
+                        <option [ngValue]="0" disabled>-- Selecciona un producto del catálogo --</option>
+                        @for (catGroup of groupedProducts(); track catGroup.category) {
+                          <optgroup [label]="catGroup.category">
+                            @for (p of catGroup.items; track p.id) {
+                              <option [ngValue]="p.id">{{ p.name }} ({{ formatCurrency(p.price) }})</option>
+                            }
+                          </optgroup>
+                        }
+                      </select>
+                      <input type="number" min="1" [(ngModel)]="ci.quantity" class="extra-inp" />
+                      <button type="button" class="btn btn-danger-ghost btn-sm" (click)="removeComboItem(idx)">✕</button>
+                    </div>
+                  }
+                </div>
+              }
             </div>
 
             <div class="modal-actions">
@@ -341,8 +549,9 @@ import { MealPackage, PackageGroup, Product, Promotion } from '../../core/models
       display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem;
       h3 { margin: 0; font-size: 1.05rem; }
       .price-tag { font-size: 1.2rem; color: var(--brand-primary); font-weight: 800; }
-      .promo-meta { font-size: 0.78rem; color: var(--text-muted); font-weight: 600; }
+      .promo-meta { font-size: 0.78rem; color: var(--text-muted); font-weight: 600; display: block; margin-top: 0.15rem; }
     }
+    .mb-xs { margin-bottom: 0.3rem; }
     .desc { margin: 0; font-size: 0.85rem; color: var(--text-secondary); }
     .groups-preview { display: flex; flex-direction: column; gap: 0.55rem; }
     .group-mini {
@@ -350,6 +559,11 @@ import { MealPackage, PackageGroup, Product, Promotion } from '../../core/models
       border-radius: var(--radius-sm); padding: 0.55rem 0.7rem;
       .g-title { display: flex; gap: 0.4rem; align-items: center; font-size: 0.82rem; margin-bottom: 0.35rem; }
       span { color: var(--text-muted); }
+      .price-inline { color: var(--brand-primary); font-weight: 800; }
+    }
+    .promo-highlight-val {
+      background: var(--bg-green-soft); color: var(--brand-green);
+      padding: 0.45rem 0.7rem; border-radius: var(--radius-sm); font-size: 0.9rem;
     }
     .opt-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
     .opt-chip {
@@ -363,7 +577,7 @@ import { MealPackage, PackageGroup, Product, Promotion } from '../../core/models
       border-radius: 999px; padding: 0.24rem 0.65rem; font-size: 0.76rem; font-weight: 700; cursor: pointer;
       &.active { background: var(--bg-green-soft); border-color: #bbf7d0; color: var(--brand-green); }
     }
-    .wide-modal { max-width: 720px; max-height: 90vh; display: flex; flex-direction: column; }
+    .wide-modal { max-width: 740px; max-height: 90vh; display: flex; flex-direction: column; }
     .modal-head {
       display: flex; justify-content: space-between; align-items: center;
       padding: 1rem 1.25rem; border-bottom: 1px solid var(--border-light);
@@ -373,7 +587,7 @@ import { MealPackage, PackageGroup, Product, Promotion } from '../../core/models
     .modal-scroll {
       padding: 1.1rem 1.25rem; overflow-y: auto; display: flex; flex-direction: column; gap: 0.9rem;
     }
-    .row-2 { display: grid; grid-template-columns: 1.5fr 1fr; gap: 0.75rem; }
+    .row-2 { display: grid; grid-template-columns: 1.4fr 1fr; gap: 0.75rem; @media (max-width: 580px) { grid-template-columns: 1fr; } }
     .row-3 { display: grid; grid-template-columns: 1.5fr 90px 120px; gap: 0.65rem; }
     .groups-editor { display: flex; flex-direction: column; gap: 0.75rem; }
     .ge-head { display: flex; justify-content: space-between; align-items: center; }
@@ -382,7 +596,7 @@ import { MealPackage, PackageGroup, Product, Promotion } from '../../core/models
       padding: 0.85rem; background: var(--bg-canvas); display: flex; flex-direction: column; gap: 0.65rem;
     }
     .opts-editor { display: flex; flex-direction: column; gap: 0.4rem; }
-    .oe-head { display: flex; justify-content: space-between; align-items: center; }
+    .oe-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.4rem; }
     .opt-col-labels {
       display: flex; gap: 0.45rem; align-items: center;
       font-size: 0.72rem; font-weight: 700; color: var(--text-muted); padding: 0 0.1rem;
@@ -401,7 +615,36 @@ import { MealPackage, PackageGroup, Product, Promotion } from '../../core/models
         border: 1px solid var(--border-strong); border-radius: 6px;
       }
     }
-    .checkbox-row { display: flex; align-items: center; gap: 0.5rem; font-weight: 600; font-size: 0.88rem; }
+    .promo-type-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.55rem;
+      @media (max-width: 640px) { grid-template-columns: 1fr; }
+    }
+    .ptype-btn {
+      text-align: left; border: 1.5px solid var(--border-strong); background: #fff;
+      border-radius: var(--radius-sm); padding: 0.6rem 0.75rem; cursor: pointer;
+      display: flex; flex-direction: column; gap: 0.18rem;
+      strong { font-size: 0.86rem; }
+      small { font-size: 0.74rem; color: var(--text-muted); line-height: 1.25; }
+      &.active { border-color: var(--brand-primary); background: var(--bg-accent-soft); }
+    }
+    .inline-disc-edit {
+      display: flex; gap: 0.45rem;
+      select { width: 145px; }
+      input { flex: 1; }
+    }
+    .check-grid-box {
+      display: flex; flex-direction: column; gap: 0.4rem;
+      small { font-weight: 700; color: var(--text-secondary); }
+    }
+    .check-grid {
+      display: flex; flex-wrap: wrap; gap: 0.4rem; max-height: 165px; overflow-y: auto;
+    }
+    .check-pill {
+      display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; font-weight: 600;
+      padding: 0.28rem 0.6rem; border-radius: 999px; border: 1px solid var(--border-strong);
+      background: #fff; cursor: pointer;
+      &.checked { background: var(--bg-accent-soft); border-color: var(--brand-primary); color: var(--brand-primary); }
+    }
     .modal-actions {
       display: flex; justify-content: flex-end; gap: 0.6rem;
       padding: 0.9rem 1.25rem; border-top: 1px solid var(--border-light);
@@ -440,11 +683,44 @@ export class PackagesAdminComponent implements OnInit {
 
   readonly showPromoModal = signal(false);
   readonly editingPromo = signal<Promotion | null>(null);
-  promoForm = { name: '', description: '', max_quantity: 5, applies_to_packages: true };
-  promoOptionsText = '';
+  promoForm: {
+    name: string;
+    description: string;
+    type: PromotionType;
+    target_scope: PromotionTargetScope;
+    target_package_ids: number[];
+    target_product_ids: number[];
+    min_order_amount: number | null;
+    min_quantity: number;
+    max_quantity: number;
+    reward_products: PromotionRewardProduct[];
+    discount_type: 'percent' | 'fixed';
+    discount_value: number;
+    fixed_price: number;
+    combo_items: PromotionComboItem[];
+  } = this.emptyPromoForm();
 
   ngOnInit(): void {
     this.loadAll();
+  }
+
+  private emptyPromoForm() {
+    return {
+      name: '',
+      description: '',
+      type: 'free_product' as PromotionType,
+      target_scope: 'all_packages' as PromotionTargetScope,
+      target_package_ids: [] as number[],
+      target_product_ids: [] as number[],
+      min_order_amount: 500,
+      min_quantity: 1,
+      max_quantity: 5,
+      reward_products: [] as PromotionRewardProduct[],
+      discount_type: 'percent' as 'percent' | 'fixed',
+      discount_value: 5,
+      fixed_price: 250,
+      combo_items: [] as PromotionComboItem[],
+    };
   }
 
   loadAll(): void {
@@ -464,6 +740,27 @@ export class PackagesAdminComponent implements OnInit {
     });
   }
 
+  promoTypeLabel(type: PromotionType): string {
+    if (type === 'discount') return '💸 Descuento $ / %';
+    if (type === 'fixed_price_combo') return '📦 Combo Precio Fijo';
+    return '🎁 Producto Gratis';
+  }
+
+  promoScopeSummary(promo: Promotion): string {
+    if (promo.type === 'fixed_price_combo') {
+      return `Combo directo · ${promo.combo_items?.length || 0} producto(s)`;
+    }
+    if (promo.target_scope === 'all_packages') return 'Aplica en cualquier paquete';
+    if (promo.target_scope === 'packages') {
+      return `Aplica en ${promo.target_package_ids?.length || 0} paquete(s) específico(s)`;
+    }
+    if (promo.target_scope === 'products') {
+      return `Aplica en ${promo.target_product_ids?.length || 0} producto(s) específico(s)`;
+    }
+    return `Aplica en pedidos desde ${this.formatCurrency(promo.min_order_amount || 0)}`;
+  }
+
+  // Package CRUD
   openNewPackage(): void {
     this.editingPkg.set(null);
     this.pkgForm = {
@@ -475,9 +772,7 @@ export class PackagesAdminComponent implements OnInit {
           name: 'Tacos Dorados',
           min_quantity: 1,
           max_quantity: 100,
-          options: [
-            { product_id: null, label: '', extra_price: 0, is_active: true },
-          ],
+          options: [{ product_id: null, label: '', extra_price: 0, is_active: true }],
         },
       ],
     };
@@ -597,10 +892,12 @@ export class PackagesAdminComponent implements OnInit {
     });
   }
 
+  // Promotions CRUD (3 types)
   openNewPromo(): void {
     this.editingPromo.set(null);
-    this.promoForm = { name: '', description: '', max_quantity: 5, applies_to_packages: true };
-    this.promoOptionsText = 'Agua de Horchata (1 Litro)\nAgua de Jamaica (1 Litro)';
+    this.promoForm = this.emptyPromoForm();
+    this.promoForm.reward_products = [{ product_id: 0, label: '' }];
+    this.promoForm.combo_items = [{ product_id: 0, label: '', quantity: 1 }];
     this.showPromoModal.set(true);
   }
 
@@ -609,11 +906,83 @@ export class PackagesAdminComponent implements OnInit {
     this.promoForm = {
       name: promo.name,
       description: promo.description ?? '',
-      max_quantity: promo.max_quantity,
-      applies_to_packages: promo.applies_to_packages,
+      type: promo.type || 'free_product',
+      target_scope: promo.target_scope || 'all_packages',
+      target_package_ids: [...(promo.target_package_ids ?? [])],
+      target_product_ids: [...(promo.target_product_ids ?? [])],
+      min_order_amount: promo.min_order_amount ?? 500,
+      min_quantity: promo.min_quantity ?? 1,
+      max_quantity: promo.max_quantity ?? 5,
+      reward_products: (promo.reward_products ?? []).map((r) => ({ ...r })),
+      discount_type: promo.discount_type ?? 'percent',
+      discount_value: promo.discount_value ?? 5,
+      fixed_price: promo.fixed_price ?? 250,
+      combo_items: (promo.combo_items ?? []).map((c) => ({ ...c })),
     };
-    this.promoOptionsText = (promo.allowed_options ?? []).join('\n');
+    if (this.promoForm.reward_products.length === 0) {
+      this.promoForm.reward_products = [{ product_id: 0, label: '' }];
+    }
+    if (this.promoForm.combo_items.length === 0) {
+      this.promoForm.combo_items = [{ product_id: 0, label: '', quantity: 1 }];
+    }
     this.showPromoModal.set(true);
+  }
+
+  isTargetPackageSelected(pkgId: number): boolean {
+    return this.promoForm.target_package_ids.includes(pkgId);
+  }
+
+  toggleTargetPackage(pkgId: number): void {
+    if (this.isTargetPackageSelected(pkgId)) {
+      this.promoForm.target_package_ids = this.promoForm.target_package_ids.filter((id) => id !== pkgId);
+    } else {
+      this.promoForm.target_package_ids = [...this.promoForm.target_package_ids, pkgId];
+    }
+  }
+
+  isTargetProductSelected(prodId: number): boolean {
+    return this.promoForm.target_product_ids.includes(prodId);
+  }
+
+  toggleTargetProduct(prodId: number): void {
+    if (this.isTargetProductSelected(prodId)) {
+      this.promoForm.target_product_ids = this.promoForm.target_product_ids.filter((id) => id !== prodId);
+    } else {
+      this.promoForm.target_product_ids = [...this.promoForm.target_product_ids, prodId];
+    }
+  }
+
+  addRewardProduct(): void {
+    this.promoForm.reward_products.push({ product_id: 0, label: '' });
+  }
+
+  removeRewardProduct(index: number): void {
+    this.promoForm.reward_products.splice(index, 1);
+  }
+
+  onRewardProductChange(index: number, productId: number): void {
+    const id = Number(productId);
+    const prod = this.products().find((p) => p.id === id);
+    this.promoForm.reward_products[index] = {
+      product_id: prod ? prod.id : 0,
+      label: prod ? prod.name : '',
+    };
+  }
+
+  addComboItem(): void {
+    this.promoForm.combo_items.push({ product_id: 0, label: '', quantity: 1 });
+  }
+
+  removeComboItem(index: number): void {
+    this.promoForm.combo_items.splice(index, 1);
+  }
+
+  onComboProductChange(index: number, productId: number): void {
+    const id = Number(productId);
+    const prod = this.products().find((p) => p.id === id);
+    const item = this.promoForm.combo_items[index];
+    item.product_id = prod ? prod.id : 0;
+    item.label = prod ? prod.name : '';
   }
 
   savePromo(): void {
@@ -622,12 +991,44 @@ export class PackagesAdminComponent implements OnInit {
       return;
     }
 
-    const payload = {
-      ...this.promoForm,
-      allowed_options: this.promoOptionsText
-        .split('\n')
-        .map((s) => s.trim())
-        .filter(Boolean),
+    if (this.promoForm.type !== 'fixed_price_combo') {
+      if (this.promoForm.target_scope === 'packages' && this.promoForm.target_package_ids.length === 0) {
+        this.toast.error('Selecciona al menos un paquete al que aplique la promoción.');
+        return;
+      }
+      if (this.promoForm.target_scope === 'products' && this.promoForm.target_product_ids.length === 0) {
+        this.toast.error('Selecciona al menos un producto al que aplique la promoción.');
+        return;
+      }
+    }
+
+    const validRewards = this.promoForm.reward_products.filter((r) => r.product_id > 0);
+    if (this.promoForm.type === 'free_product' && validRewards.length === 0) {
+      this.toast.error('Selecciona al menos un producto del catálogo para regalar.');
+      return;
+    }
+
+    const validCombo = this.promoForm.combo_items.filter((c) => c.product_id > 0 && c.quantity > 0);
+    if (this.promoForm.type === 'fixed_price_combo' && validCombo.length === 0) {
+      this.toast.error('Agrega al menos un producto del catálogo al combo promocional.');
+      return;
+    }
+
+    const payload: Partial<Promotion> = {
+      name: this.promoForm.name.trim(),
+      description: this.promoForm.description.trim() || null,
+      type: this.promoForm.type,
+      target_scope: this.promoForm.target_scope,
+      target_package_ids: this.promoForm.target_scope === 'packages' ? this.promoForm.target_package_ids : null,
+      target_product_ids: this.promoForm.target_scope === 'products' ? this.promoForm.target_product_ids : null,
+      min_order_amount: this.promoForm.target_scope === 'order_total' ? (this.promoForm.min_order_amount ?? 0) : null,
+      min_quantity: Math.max(1, Number(this.promoForm.min_quantity) || 1),
+      max_quantity: Math.max(1, Number(this.promoForm.max_quantity) || 1),
+      reward_products: this.promoForm.type === 'free_product' ? validRewards : null,
+      discount_type: this.promoForm.type === 'discount' ? this.promoForm.discount_type : null,
+      discount_value: this.promoForm.type === 'discount' ? Number(this.promoForm.discount_value || 0) : null,
+      fixed_price: this.promoForm.type === 'fixed_price_combo' ? Number(this.promoForm.fixed_price || 0) : null,
+      combo_items: this.promoForm.type === 'fixed_price_combo' ? validCombo : null,
     };
 
     this.saving.set(true);
@@ -643,9 +1044,9 @@ export class PackagesAdminComponent implements OnInit {
         this.toast.success('Promoción guardada.');
         this.loadAll();
       },
-      error: () => {
+      error: (err) => {
         this.saving.set(false);
-        this.toast.error('No se pudo guardar la promoción.');
+        this.toast.error(err?.error?.message || 'No se pudo guardar la promoción.');
       },
     });
   }

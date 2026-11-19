@@ -51,13 +51,38 @@ export interface MealPackage {
   groups: PackageGroup[];
 }
 
+export type PromotionType = 'free_product' | 'discount' | 'fixed_price_combo';
+export type PromotionTargetScope = 'all_packages' | 'packages' | 'products' | 'order_total';
+
+export interface PromotionRewardProduct {
+  product_id: number;
+  label: string;
+}
+
+export interface PromotionComboItem {
+  product_id: number;
+  label: string;
+  quantity: number;
+}
+
 export interface Promotion {
   id: number;
   name: string;
   description: string | null;
+  type: PromotionType;
+  target_scope: PromotionTargetScope;
   applies_to_packages: boolean;
+  target_package_ids: number[] | null;
+  target_product_ids: number[] | null;
+  min_order_amount: number | null;
+  min_quantity: number;
   max_quantity: number;
   allowed_options: string[];
+  reward_products: PromotionRewardProduct[] | null;
+  discount_type: 'percent' | 'fixed' | null;
+  discount_value: number | null;
+  fixed_price: number | null;
+  combo_items: PromotionComboItem[] | null;
   is_active: boolean;
 }
 
@@ -111,7 +136,8 @@ export interface OrderItem {
   order_id?: number;
   product_id: number | null;
   package_id?: number | null;
-  item_type?: 'product' | 'package' | 'promo_custom';
+  promotion_id?: number | null;
+  item_type?: 'product' | 'package' | 'promo_combo' | 'promo_custom';
   product_name: string;
   unit_price: number;
   quantity: number;
@@ -135,6 +161,18 @@ export interface Order {
   delivery_lng: number | null;
   subtotal: number;
   promo_savings: number;
+  promo_discount_amount: number;
+  applied_promotions: Array<{
+    promotion_id: number;
+    name: string;
+    discount_type: 'percent' | 'fixed';
+    discount_value: number;
+    discount_amount: number;
+  }> | null;
+  manual_discount_type: 'fixed' | 'percent' | null;
+  manual_discount_value: number;
+  manual_discount_amount: number;
+  manual_discount_reason: string | null;
   total: number;
   notes: string | null;
   is_delivered: boolean;

@@ -286,13 +286,34 @@
 
   <table class="totals-table">
     <tr>
-      <td>Subtotal productos y paquetes:</td>
+      <td>Subtotal productos, paquetes y combos:</td>
       <td class="right">${{ number_format((float)$order->subtotal, 2) }}</td>
     </tr>
+    @if(!empty($order->applied_promotions))
+      @foreach($order->applied_promotions as $promoDisc)
+        <tr>
+          <td style="color: #15803d;">Descuento promo ({{ $promoDisc['name'] }}):</td>
+          <td class="right" style="color: #15803d;">-${{ number_format((float)($promoDisc['discount_amount'] ?? 0), 2) }}</td>
+        </tr>
+      @endforeach
+    @elseif($order->promo_discount_amount > 0)
+      <tr>
+        <td style="color: #15803d;">Descuento por promociones:</td>
+        <td class="right" style="color: #15803d;">-${{ number_format((float)$order->promo_discount_amount, 2) }}</td>
+      </tr>
+    @endif
+    @if($order->manual_discount_amount > 0)
+      <tr>
+        <td style="color: #9a5406;">
+          Descuento manual{{ $order->manual_discount_reason ? ' (' . $order->manual_discount_reason . ')' : '' }}:
+        </td>
+        <td class="right" style="color: #9a5406;">-${{ number_format((float)$order->manual_discount_amount, 2) }}</td>
+      </tr>
+    @endif
     @if($order->promo_savings > 0)
       <tr>
-        <td style="color: #15803d;">Ahorro en regalos / promociones:</td>
-        <td class="right" style="color: #15803d;">-${{ number_format((float)$order->promo_savings, 2) }}</td>
+        <td style="color: #15803d;">Valor en regalos incluidos ($0.00):</td>
+        <td class="right" style="color: #15803d;">${{ number_format((float)$order->promo_savings, 2) }}</td>
       </tr>
     @endif
     <tr class="grand">

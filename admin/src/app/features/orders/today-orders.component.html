@@ -159,8 +159,17 @@
             <div class="total-block">
               <span class="total-label">Total a cobrar</span>
               <strong class="total-amount">{{ formatCurrency(order.total) }}</strong>
+              @if (order.promo_discount_amount > 0) {
+                <small class="savings-tag">Desc. promos: − {{ formatCurrency(order.promo_discount_amount) }}</small>
+              }
+              @if (order.manual_discount_amount > 0) {
+                <small class="savings-tag">
+                  Desc. manual: − {{ formatCurrency(order.manual_discount_amount) }}
+                  @if (order.manual_discount_reason) { ({{ order.manual_discount_reason }}) }
+                </small>
+              }
               @if (order.promo_savings > 0) {
-                <small class="savings-tag">Incluye {{ formatCurrency(order.promo_savings) }} en promos gratis</small>
+                <small class="savings-tag">Incluye {{ formatCurrency(order.promo_savings) }} en regalos gratis</small>
               }
             </div>
 

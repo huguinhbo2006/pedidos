@@ -26,10 +26,15 @@ export interface CreateOrderPayload {
   delivery_lng?: number | null;
   address_label?: string | null;
   notes?: string | null;
+  applied_promotion_ids?: number[];
+  manual_discount_type?: 'fixed' | 'percent' | null;
+  manual_discount_value?: number | null;
+  manual_discount_reason?: string | null;
   items: Array<{
-    item_type: 'product' | 'package' | 'promo_custom';
+    item_type: 'product' | 'package' | 'promo_combo' | 'promo_custom';
     product_id?: number | null;
     package_id?: number | null;
+    promotion_id?: number | null;
     product_name?: string;
     quantity: number;
     is_promo: boolean;

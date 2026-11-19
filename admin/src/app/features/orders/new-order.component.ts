@@ -24,15 +24,22 @@ import {
 
 interface CartLine {
   uid: string;
-  item_type: 'product' | 'package' | 'promo_custom';
+  item_type: 'product' | 'package' | 'promo_combo' | 'promo_custom';
   product_id: number | null;
   package_id: number | null;
+  promotion_id?: number | null;
   product_name: string;
   unit_price: number;
   quantity: number;
   is_promo: boolean;
   promo_reason: string;
   package_details?: PackageSelectionItem[] | null;
+}
+
+interface PromoRewardChoice {
+  key: string;
+  product_id: number | null;
+  label: string;
 }
 
 @Component({
@@ -78,7 +85,7 @@ export class NewOrderComponent implements OnInit, OnDestroy {
   orderNotes = '';
 
   // Catalog, Packages & Promotions
-  readonly catalogMode = signal<'packages' | 'products'>('packages');
+  readonly catalogMode = signal<'packages' | 'combos' | 'products'>('packages');
   readonly products = signal<Product[]>([]);
   readonly packages = signal<MealPackage[]>([]);
   readonly promotions = signal<Promotion[]>([]);
@@ -86,9 +93,15 @@ export class NewOrderComponent implements OnInit, OnDestroy {
   readonly selectedCategory = signal<string>('Todos');
   productSearch = '';
 
-  // Package builder modal & package promotion gift distribution
+  // Package builder modal & promotion states
   readonly buildingPackage = signal<MealPackage | null>(null);
   promoGiftCounts: Record<string, number> = {};
+  readonly selectedDiscountPromoIds = signal<number[]>([]);
+
+  // Manual discount
+  readonly manualDiscountType = signal<'fixed' | 'percent' | null>(null);
+  readonly manualDiscountValue = signal<number>(0);
+  readonly manualDiscountReason = signal<string>('');
 
   // Cart & custom promo
   readonly cart = signal<CartLine[]>([]);
@@ -124,13 +137,55 @@ export class NewOrderComponent implements OnInit, OnDestroy {
     });
   });
 
-  readonly hasPackageInCart = computed(() =>
-    this.cart().some((l) => l.item_type === 'package')
+  readonly comboPromotions = computed(() =>
+    this.promotions().filter((p) => p.is_active && p.type === 'fixed_price_combo')
   );
 
-  readonly packagePromotions = computed(() =>
-    this.promotions().filter((p) => p.is_active && p.applies_to_packages)
+  readonly qualifyingFreePromotions = computed(() =>
+    this.promotions().filter(
+      (p) => p.is_active && p.type === 'free_product' && this.evalPromoScope(p).qualifies
+    )
   );
+
+  readonly qualifyingDiscountPromotions = computed(() =>
+    this.promotions()
+      .filter((p) => p.is_active && p.type === 'discount')
+      .map((promo) => {
+        const { qualifies, qualifyingBase } = this.evalPromoScope(promo);
+        if (!qualifies) return null;
+        const val = Math.max(0, Number(promo.discount_value ?? 0));
+        const discount =
+          promo.discount_type === 'percent'
+            ? Number((qualifyingBase * (Math.min(100, val) / 100)).toFixed(2))
+            : Math.min(qualifyingBase, Number(val.toFixed(2)));
+        return discount > 0 ? { promo, discount } : null;
+      })
+      .filter((x): x is { promo: Promotion; discount: number } => x !== null)
+  );
+
+  readonly selectedQualifyingDiscounts = computed(() =>
+    this.qualifyingDiscountPromotions().filter((q) =>
+      this.selectedDiscountPromoIds().includes(q.promo.id)
+    )
+  );
+
+  readonly promoDiscountTotal = computed(() =>
+    Math.min(
+      this.orderSubtotal(),
+      Number(this.selectedQualifyingDiscounts().reduce((s, q) => s + q.discount, 0).toFixed(2))
+    )
+  );
+
+  readonly manualDiscountAmount = computed(() => {
+    const remaining = Math.max(0, Number((this.orderSubtotal() - this.promoDiscountTotal()).toFixed(2)));
+    const type = this.manualDiscountType();
+    const val = Math.max(0, Number(this.manualDiscountValue()) || 0);
+    if (!type || val <= 0 || remaining <= 0) return 0;
+    if (type === 'percent') {
+      return Number((remaining * (Math.min(100, val) / 100)).toFixed(2));
+    }
+    return Math.min(remaining, Number(val.toFixed(2)));
+  });
 
   readonly totalPaidItems = computed(() =>
     this.cart()
@@ -144,11 +199,18 @@ export class NewOrderComponent implements OnInit, OnDestroy {
       .reduce((sum, l) => sum + l.quantity, 0)
   );
 
-  readonly orderTotal = computed(() =>
+  readonly orderSubtotal = computed(() =>
     Number(
       this.cart()
         .reduce((sum, l) => sum + (l.is_promo ? 0 : l.unit_price * l.quantity), 0)
         .toFixed(2)
+    )
+  );
+
+  readonly finalOrderTotal = computed(() =>
+    Math.max(
+      0,
+      Number((this.orderSubtotal() - this.promoDiscountTotal() - this.manualDiscountAmount()).toFixed(2))
     )
   );
 
@@ -400,35 +462,87 @@ export class NewOrderComponent implements OnInit, OnDestroy {
     this.toast.success(`${result.package.name} agregado al pedido.`);
   }
 
-  getPromoOptQty(promoId: number, option: string): number {
-    return this.promoGiftCounts[`${promoId}::${option}`] ?? 0;
+  private evalPromoScope(promo: Promotion): { qualifies: boolean; qualifyingBase: number } {
+    const paidLines = this.cart().filter((l) => !l.is_promo);
+    const minQty = Math.max(1, Number(promo.min_quantity ?? 1));
+    const minAmount = Number(promo.min_order_amount ?? 0);
+    const scope = promo.target_scope || 'all_packages';
+
+    if (scope === 'all_packages') {
+      const matching = paidLines.filter((l) => l.item_type === 'package');
+      const qty = matching.reduce((s, l) => s + l.quantity, 0);
+      const base = matching.reduce((s, l) => s + l.unit_price * l.quantity, 0);
+      return { qualifies: qty >= minQty && base >= minAmount, qualifyingBase: base };
+    }
+
+    if (scope === 'packages') {
+      const ids = new Set((promo.target_package_ids ?? []).map(Number));
+      const matching = paidLines.filter(
+        (l) => l.item_type === 'package' && l.package_id !== null && ids.has(Number(l.package_id))
+      );
+      const qty = matching.reduce((s, l) => s + l.quantity, 0);
+      const base = matching.reduce((s, l) => s + l.unit_price * l.quantity, 0);
+      return { qualifies: qty >= minQty && base >= minAmount, qualifyingBase: base };
+    }
+
+    if (scope === 'products') {
+      const ids = new Set((promo.target_product_ids ?? []).map(Number));
+      const matching = paidLines.filter(
+        (l) => l.item_type === 'product' && l.product_id !== null && ids.has(Number(l.product_id))
+      );
+      const qty = matching.reduce((s, l) => s + l.quantity, 0);
+      const base = matching.reduce((s, l) => s + l.unit_price * l.quantity, 0);
+      return { qualifies: qty >= minQty && base >= minAmount, qualifyingBase: base };
+    }
+
+    const sub = this.orderSubtotal();
+    return { qualifies: sub > 0 && sub >= minAmount, qualifyingBase: sub };
+  }
+
+  getPromoRewardChoices(promo: Promotion): PromoRewardChoice[] {
+    if (promo.reward_products?.length) {
+      return promo.reward_products.map((r) => ({
+        key: `p:${r.product_id}`,
+        product_id: r.product_id,
+        label: r.label,
+      }));
+    }
+    return (promo.allowed_options ?? []).map((opt) => ({
+      key: `o:${opt}`,
+      product_id: null,
+      label: opt,
+    }));
+  }
+
+  getPromoOptQty(promoId: number, choiceKey: string): number {
+    return this.promoGiftCounts[`${promoId}::${choiceKey}`] ?? 0;
   }
 
   promoTotalSelected(promo: Promotion): number {
-    return (promo.allowed_options ?? []).reduce(
-      (sum, opt) => sum + this.getPromoOptQty(promo.id, opt),
+    return this.getPromoRewardChoices(promo).reduce(
+      (sum, ch) => sum + this.getPromoOptQty(promo.id, ch.key),
       0
     );
   }
 
-  adjustPromoGift(promo: Promotion, option: string, delta: number): void {
-    const key = `${promo.id}::${option}`;
+  adjustPromoGift(promo: Promotion, choiceKey: string, delta: number): void {
+    const key = `${promo.id}::${choiceKey}`;
     const current = this.promoGiftCounts[key] ?? 0;
     const otherTotal = this.promoTotalSelected(promo) - current;
     const maxForThis = Math.max(0, promo.max_quantity - otherTotal);
-    const next = Math.min(maxForThis, Math.max(0, current + delta));
-    this.promoGiftCounts[key] = next;
+    this.promoGiftCounts[key] = Math.min(maxForThis, Math.max(0, current + delta));
   }
 
-  fillPromoGift(promo: Promotion, option: string): void {
-    for (const opt of promo.allowed_options ?? []) {
-      this.promoGiftCounts[`${promo.id}::${opt}`] = opt === option ? promo.max_quantity : 0;
+  fillPromoGift(promo: Promotion, choiceKey: string): void {
+    for (const ch of this.getPromoRewardChoices(promo)) {
+      this.promoGiftCounts[`${promo.id}::${ch.key}`] = ch.key === choiceKey ? promo.max_quantity : 0;
     }
   }
 
-  applyPackagePromotion(promo: Promotion): void {
-    const chosen = (promo.allowed_options ?? [])
-      .map((opt) => ({ opt, qty: this.getPromoOptQty(promo.id, opt) }))
+  applyFreeProductPromotion(promo: Promotion): void {
+    const choices = this.getPromoRewardChoices(promo);
+    const chosen = choices
+      .map((ch) => ({ ...ch, qty: this.getPromoOptQty(promo.id, ch.key) }))
       .filter((x) => x.qty > 0);
 
     if (chosen.length === 0) {
@@ -436,26 +550,106 @@ export class NewOrderComponent implements OnInit, OnDestroy {
       return;
     }
 
-    const summary = chosen.map((x) => `${x.qty}x ${x.opt}`).join(', ');
-    this.cart.update((lines) => [
-      ...lines,
-      {
+    const catalogMatched = chosen.filter((x) => x.product_id !== null);
+    const customMatched = chosen.filter((x) => x.product_id === null);
+
+    const newLines: CartLine[] = [];
+    for (const item of catalogMatched) {
+      const prod = this.products().find((p) => p.id === item.product_id);
+      newLines.push({
+        uid: `line_${this.uidCounter++}`,
+        item_type: 'product',
+        product_id: item.product_id,
+        package_id: null,
+        promotion_id: promo.id,
+        product_name: item.label,
+        unit_price: Number(prod?.price ?? 0),
+        quantity: item.qty,
+        is_promo: true,
+        promo_reason: promo.name,
+      });
+    }
+
+    if (customMatched.length > 0) {
+      const summary = customMatched.map((x) => `${x.qty}x ${x.label}`).join(', ');
+      newLines.push({
         uid: `line_${this.uidCounter++}`,
         item_type: 'promo_custom',
         product_id: null,
         package_id: null,
+        promotion_id: promo.id,
         product_name: `Regalo: ${summary}`,
         unit_price: 0,
         quantity: 1,
         is_promo: true,
         promo_reason: promo.name,
-      },
-    ]);
+      });
+    }
 
-    for (const opt of promo.allowed_options ?? []) {
-      this.promoGiftCounts[`${promo.id}::${opt}`] = 0;
+    this.cart.update((lines) => [...lines, ...newLines]);
+    for (const ch of choices) {
+      this.promoGiftCounts[`${promo.id}::${ch.key}`] = 0;
     }
     this.toast.success(`Regalo "${promo.name}" agregado ($0.00).`);
+  }
+
+  isDiscountPromoSelected(promoId: number): boolean {
+    return this.selectedDiscountPromoIds().includes(promoId);
+  }
+
+  toggleDiscountPromo(promoId: number): void {
+    this.selectedDiscountPromoIds.update((ids) =>
+      ids.includes(promoId) ? ids.filter((id) => id !== promoId) : [...ids, promoId]
+    );
+  }
+
+  addComboPromoToCart(promo: Promotion): void {
+    const existing = this.cart().find(
+      (item) => item.item_type === 'promo_combo' && item.promotion_id === promo.id && !item.is_promo
+    );
+    if (existing) {
+      this.cart.update((lines) =>
+        lines.map((l) => (l.uid === existing.uid ? { ...l, quantity: l.quantity + 1 } : l))
+      );
+      this.toast.success(`+1 ${promo.name}`);
+      return;
+    }
+
+    this.cart.update((lines) => [
+      ...lines,
+      {
+        uid: `line_${this.uidCounter++}`,
+        item_type: 'promo_combo',
+        product_id: null,
+        package_id: null,
+        promotion_id: promo.id,
+        product_name: promo.name,
+        unit_price: Number(promo.fixed_price ?? 0),
+        quantity: 1,
+        is_promo: false,
+        promo_reason: '',
+        package_details: (promo.combo_items ?? []).map((ci) => ({
+          group: 'Combo Promoción',
+          label: ci.label,
+          quantity: ci.quantity,
+          extra_price: 0,
+        })),
+      },
+    ]);
+    this.toast.success(`Combo "${promo.name}" agregado al pedido.`);
+  }
+
+  setManualDiscountType(type: 'fixed' | 'percent' | null): void {
+    this.manualDiscountType.set(type);
+    if (!type) {
+      this.manualDiscountValue.set(0);
+      this.manualDiscountReason.set('');
+    }
+  }
+
+  onManualDiscountValueChange(raw: number | string): void {
+    const num = Math.max(0, Number(raw) || 0);
+    this.manualDiscountValue.set(this.manualDiscountType() === 'percent' ? Math.min(100, num) : num);
   }
 
   addProductToCart(product: Product, asPromo = false): void {
@@ -598,10 +792,16 @@ export class NewOrderComponent implements OnInit, OnDestroy {
         delivery_lng: usingSaved ? savedAddr.longitude : this.newAddressLng,
         address_label: usingSaved ? savedAddr.label : this.newAddressLabel.trim() || null,
         notes: this.orderNotes.trim() || null,
+        applied_promotion_ids: this.selectedQualifyingDiscounts().map((q) => q.promo.id),
+        manual_discount_type: this.manualDiscountAmount() > 0 ? this.manualDiscountType() : null,
+        manual_discount_value: this.manualDiscountAmount() > 0 ? this.manualDiscountValue() : null,
+        manual_discount_reason:
+          this.manualDiscountAmount() > 0 ? this.manualDiscountReason().trim() || null : null,
         items: this.cart().map((item) => ({
           item_type: item.item_type,
           product_id: item.product_id,
           package_id: item.package_id,
+          promotion_id: item.promotion_id ?? null,
           product_name: item.item_type === 'promo_custom' ? item.product_name : undefined,
           quantity: item.quantity,
           is_promo: item.is_promo,
