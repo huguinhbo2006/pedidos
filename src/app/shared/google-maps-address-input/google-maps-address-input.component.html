@@ -1,0 +1,70 @@
+<div class="maps-autocomplete-wrapper">
+  <div class="input-status-bar">
+    <span class="maps-mode-pill" [class.is-google]="mapsService.googleReady()">
+      @if (mapsService.googleReady()) {
+        <span class="dot dot-green"></span> Google Maps Places activo
+      } @else {
+        <span class="dot dot-amber"></span> Búsqueda en vivo (modo respaldo — configura Google Maps API Key arriba para Places oficial)
+      }
+    </span>
+    @if (externalMapsLink) {
+      <a class="ext-map-link" [href]="externalMapsLink" target="_blank" rel="noopener noreferrer">
+        Abrir en Google Maps ↗
+      </a>
+    }
+  </div>
+
+  <div class="search-box">
+    <span class="search-icon">📍</span>
+    <input
+      type="text"
+      [ngModel]="queryText"
+      (ngModelChange)="onInputChange($event)"
+      (focus)="onFocus()"
+      (blur)="closeDropdownDelayed()"
+      [placeholder]="placeholder"
+      autocomplete="off"
+    />
+    @if (searching()) {
+      <span class="spinner-inline" aria-label="Buscando direcciones">Buscando...</span>
+    }
+  </div>
+
+  @if (mapsService.googleError()) {
+    <div class="maps-error-note">{{ mapsService.googleError() }}</div>
+  }
+
+  @if (dropdownOpen() && suggestions().length > 0) {
+    <ul class="suggestions-dropdown" role="listbox">
+      @for (item of suggestions(); track item.description) {
+        <li
+          class="suggestion-item"
+          role="option"
+          (mousedown)="selectSuggestion(item)"
+        >
+          <span class="pin">📌</span>
+          <div class="suggestion-text">
+            <strong>{{ item.main_text }}</strong>
+            @if (item.secondary_text) {
+              <small>{{ item.secondary_text }}</small>
+            }
+          </div>
+          <span class="source-tag">{{ item.source === 'google' ? 'Google' : 'Mapa' }}</span>
+        </li>
+      }
+    </ul>
+  }
+
+  @if (latitude !== null && longitude !== null) {
+    <div class="coords-preview">
+      @if (mapsService.googleReady()) {
+        <div #mapContainer class="google-map-canvas"></div>
+        <small class="map-hint">Puedes arrastrar el pin para ajustar el punto exacto de entrega.</small>
+      } @else {
+        <div class="coords-chip">
+          ✅ Ubicación verificada: {{ latitude | number:'1.4-4' }}, {{ longitude | number:'1.4-4' }}
+        </div>
+      }
+    </div>
+  }
+</div>

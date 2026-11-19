@@ -1,0 +1,160 @@
+<section class="catalog-page">
+  <div class="page-header">
+    <div>
+      <h1>Catálogo de Productos</h1>
+      <p class="subtitle">Administra tus órdenes de tacos dorados, bebidas, extras y precios.</p>
+    </div>
+
+    <button type="button" class="btn btn-primary btn-lg" (click)="openCreateModal()">
+      ➕ Nuevo Producto
+    </button>
+  </div>
+
+  <div class="filter-bar card">
+    <input
+      type="text"
+      [(ngModel)]="searchTerm"
+      placeholder="Buscar producto..."
+      class="search-input"
+    />
+    <select [(ngModel)]="categoryFilter" class="cat-select">
+      @for (cat of categories(); track cat) {
+        <option [value]="cat">{{ cat }}</option>
+      }
+    </select>
+  </div>
+
+  @if (loading()) {
+    <div class="card empty-box">Cargando catálogo...</div>
+  } @else if (filteredProducts().length === 0) {
+    <div class="card empty-box">No se encontraron productos.</div>
+  } @else {
+    <div class="catalog-table-wrap card">
+      <table class="catalog-table">
+        <thead>
+          <tr>
+            <th>Producto</th>
+            <th>Categoría</th>
+            <th>Precio</th>
+            <th>Estado</th>
+            <th class="text-right">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (product of filteredProducts(); track product.id) {
+            <tr [class.inactive-row]="!product.is_active">
+              <td>
+                <div class="pname">{{ product.name }}</div>
+                @if (product.description) {
+                  <div class="pdesc">{{ product.description }}</div>
+                }
+              </td>
+              <td>
+                <span class="badge badge-muted">{{ product.category }}</span>
+              </td>
+              <td class="price-cell">{{ formatCurrency(product.price) }}</td>
+              <td>
+                <button
+                  type="button"
+                  class="status-pill"
+                  [class.active]="product.is_active"
+                  (click)="toggleActive(product)"
+                >
+                  {{ product.is_active ? '● Activo' : '○ Inactivo' }}
+                </button>
+              </td>
+              <td class="text-right actions-cell">
+                <button type="button" class="btn btn-outline btn-sm" (click)="openEditModal(product)">
+                  Editar
+                </button>
+                <button type="button" class="btn btn-danger-ghost btn-sm" (click)="deleteProduct(product)">
+                  Eliminar
+                </button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+
+  @if (showModal()) {
+    <div class="modal-backdrop" (click)="closeModal()">
+      <div class="modal-panel" (click)="$event.stopPropagation()">
+        <div class="modal-head">
+          <h3>{{ editingProduct() ? 'Editar Producto' : 'Nuevo Producto' }}</h3>
+          <button type="button" class="close-btn" (click)="closeModal()">✕</button>
+        </div>
+
+        <form (ngSubmit)="saveProduct()" class="modal-form">
+          <div class="form-field">
+            <label for="prodName">Nombre del producto *</label>
+            <input
+              id="prodName"
+              type="text"
+              [(ngModel)]="formName"
+              name="formName"
+              placeholder="Ej. Orden de Tacos Dorados de Papa (4 pzas)"
+              required
+            />
+          </div>
+
+          <div class="row-2">
+            <div class="form-field">
+              <label for="prodCat">Categoría *</label>
+              <input
+                id="prodCat"
+                type="text"
+                list="categoryPresets"
+                [(ngModel)]="formCategory"
+                name="formCategory"
+                required
+              />
+              <datalist id="categoryPresets">
+                @for (cat of presetCategories; track cat) {
+                  <option [value]="cat"></option>
+                }
+              </datalist>
+            </div>
+
+            <div class="form-field">
+              <label for="prodPrice">Precio (MXN) *</label>
+              <input
+                id="prodPrice"
+                type="number"
+                step="0.5"
+                min="0"
+                [(ngModel)]="formPrice"
+                name="formPrice"
+                required
+              />
+            </div>
+          </div>
+
+          <div class="form-field">
+            <label for="prodDesc">Descripción (opcional)</label>
+            <textarea
+              id="prodDesc"
+              rows="2"
+              [(ngModel)]="formDescription"
+              name="formDescription"
+              placeholder="Ingredientes o presentación..."
+            ></textarea>
+          </div>
+
+          <label class="checkbox-row">
+            <input type="checkbox" [(ngModel)]="formActive" name="formActive" />
+            <span>Producto activo y disponible para pedidos</span>
+          </label>
+
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" (click)="closeModal()">Cancelar</button>
+            <button type="submit" class="btn btn-primary" [disabled]="saving()">
+              {{ saving() ? 'Guardando...' : 'Guardar producto' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
+</section>

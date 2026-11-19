@@ -1,0 +1,209 @@
+<section class="today-page">
+  <div class="page-header">
+    <div>
+      <h1>Pedidos del Día</h1>
+      <p class="subtitle">
+        Solo se muestran los pedidos pendientes por entregar de hoy
+        @if (todayDate()) {
+          <span class="date-chip">📅 {{ todayDate() }}</span>
+        }
+      </p>
+    </div>
+
+    <div class="header-actions">
+      <button type="button" class="btn btn-outline" (click)="loadOrders()" [disabled]="loading()">
+        🔄 Actualizar
+      </button>
+      <a routerLink="/pedidos/nuevo" class="btn btn-primary btn-lg">
+        ➕ Nuevo Pedido
+      </a>
+    </div>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi-card card">
+      <span class="kpi-label">Pendientes hoy</span>
+      <strong class="kpi-value text-primary">{{ summary().pending_count }}</strong>
+      <small>{{ formatCurrency(summary().pending_amount) }} por cobrar</small>
+    </div>
+
+    <a routerLink="/historial" class="kpi-card card kpi-link" title="Ver pedidos entregados en historial">
+      <span class="kpi-label">Entregados hoy (ocultos aquí)</span>
+      <strong class="kpi-value text-green">{{ summary().delivered_count }}</strong>
+      <small>{{ formatCurrency(summary().delivered_amount) }} entregados · Ver historial ↗</small>
+    </a>
+
+    <div class="kpi-card card">
+      <span class="kpi-label">Venta total del día</span>
+      <strong class="kpi-value">{{ formatCurrency(summary().total_sales_today) }}</strong>
+      <small>{{ summary().total_orders_today }} pedidos registrados hoy</small>
+    </div>
+  </div>
+
+  <div class="toolbar card">
+    <div class="search-input-wrap">
+      <span class="icon">🔍</span>
+      <input
+        type="text"
+        [ngModel]="searchTerm"
+        (ngModelChange)="onSearchChange($event)"
+        placeholder="Buscar por folio, nombre del cliente, celular o domicilio..."
+      />
+      @if (searchTerm) {
+        <button type="button" class="clear-btn" (click)="onSearchChange('')">Limpiar</button>
+      }
+    </div>
+  </div>
+
+  @if (loading()) {
+    <div class="empty-state card">
+      <p>Cargando pedidos pendientes de hoy...</p>
+    </div>
+  } @else if (orders().length === 0) {
+    <div class="empty-state card">
+      <div class="empty-emoji">🌮</div>
+      <h2>No hay pedidos pendientes por entregar</h2>
+      <p>
+        @if (searchTerm) {
+          No se encontraron pedidos pendientes que coincidan con "{{ searchTerm }}".
+        } @else {
+          Todos los pedidos de hoy ya fueron entregados o aún no registras uno nuevo.
+        }
+      </p>
+      <a routerLink="/pedidos/nuevo" class="btn btn-primary">
+        ➕ Dar de alta un pedido
+      </a>
+    </div>
+  } @else {
+    <div class="orders-grid">
+      @for (order of orders(); track order.id) {
+        <article class="order-card card">
+          <div class="order-card-head">
+            <div class="order-id-block">
+              <span class="folio">{{ order.order_number }}</span>
+              <span class="time">🕒 {{ order.created_at | date:'shortTime' }}</span>
+            </div>
+            <span class="badge badge-pending">⏳ Pendiente</span>
+          </div>
+
+          <div class="customer-box">
+            <div class="customer-name">👤 {{ order.customer_name }}</div>
+            <div class="customer-phone">📞 {{ order.customer_phone }}</div>
+          </div>
+
+          <div class="address-box">
+            <div class="address-line">
+              <span class="pin">📍</span>
+              <span>{{ order.delivery_address }}</span>
+            </div>
+            @if (order.delivery_references) {
+              <div class="address-refs">
+                <strong>Referencias:</strong> {{ order.delivery_references }}
+              </div>
+            }
+            <a class="map-link" [href]="getMapsUrl(order)" target="_blank" rel="noopener noreferrer">
+              🗺️ Ver ubicación en Google Maps ↗
+            </a>
+          </div>
+
+          <div class="items-box">
+            <div class="items-title">Detalle del pedido</div>
+            <ul>
+              @for (item of order.items; track item.id ?? $index) {
+                <li [class.promo-line]="item.is_promo">
+                  <div class="item-left">
+                    <span class="qty">{{ item.quantity }}x</span>
+                    <span class="pname">{{ item.product_name }}</span>
+                    @if (item.is_promo) {
+                      <span class="badge badge-promo">🎁 GRATIS · {{ item.promo_reason || 'Promoción' }}</span>
+                    }
+                  </div>
+                  <div class="item-price">
+                    @if (item.is_promo) {
+                      @if (item.unit_price > 0) {
+                        <del>{{ formatCurrency(item.unit_price * item.quantity) }}</del>
+                      }
+                      <strong class="free-amt">$0.00</strong>
+                    } @else {
+                      <strong>{{ formatCurrency(item.line_total) }}</strong>
+                    }
+                  </div>
+                </li>
+              }
+            </ul>
+          </div>
+
+          @if (order.notes) {
+            <div class="notes-box">
+              📝 <strong>Notas:</strong> {{ order.notes }}
+            </div>
+          }
+
+          <div class="order-card-foot">
+            <div class="total-block">
+              <span class="total-label">Total a cobrar</span>
+              <strong class="total-amount">{{ formatCurrency(order.total) }}</strong>
+              @if (order.promo_savings > 0) {
+                <small class="savings-tag">Incluye {{ formatCurrency(order.promo_savings) }} en promos gratis</small>
+              }
+            </div>
+
+            <button
+              type="button"
+              class="btn btn-success delivered-flag-btn"
+              (click)="openConfirmDeliver(order)"
+            >
+              🚩 Entregado
+            </button>
+          </div>
+        </article>
+      }
+    </div>
+  }
+
+  @if (confirmingOrder(); as order) {
+    <div class="modal-backdrop" (click)="cancelConfirmDeliver()">
+      <div class="modal-panel" (click)="$event.stopPropagation()">
+        <div class="confirm-head">
+          <div class="flag-circle">🚩</div>
+          <div>
+            <h3>Confirmar entrega</h3>
+            <p>Pedido <strong>{{ order.order_number }}</strong></p>
+          </div>
+        </div>
+
+        <div class="confirm-body">
+          <div class="summary-pill">
+            <div><strong>Cliente:</strong> {{ order.customer_name }} ({{ order.customer_phone }})</div>
+            <div><strong>Domicilio:</strong> {{ order.delivery_address }}</div>
+            <div><strong>Total del pedido:</strong> {{ formatCurrency(order.total) }}</div>
+          </div>
+
+          <p class="confirm-question">
+            ¿Confirmas que este pedido ya fue entregado? Al confirmar,
+            <strong>dejará de mostrarse en la pantalla principal aunque sea de hoy</strong>.
+          </p>
+        </div>
+
+        <div class="confirm-actions">
+          <button
+            type="button"
+            class="btn btn-outline"
+            (click)="cancelConfirmDeliver()"
+            [disabled]="deliveringId() !== null"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            class="btn btn-success"
+            (click)="confirmDeliver()"
+            [disabled]="deliveringId() !== null"
+          >
+            {{ deliveringId() !== null ? 'Confirmando...' : '✅ Sí, confirmar entrega' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+</section>

@@ -1,0 +1,436 @@
+import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { Router, RouterLink } from '@angular/router';
+import { Subject, Subscription, debounceTime, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
+import { ApiService } from '../../core/services/api.service';
+import { ToastService } from '../../core/services/toast.service';
+import {
+  Customer,
+  CustomerAddress,
+  Product,
+} from '../../core/models/api.models';
+import {
+  GoogleMapsAddressInputComponent,
+  SelectedAddressPayload,
+} from '../../shared/google-maps-address-input/google-maps-address-input.component';
+
+interface CartLine {
+  uid: string;
+  product_id: number | null;
+  product_name: string;
+  unit_price: number;
+  quantity: number;
+  is_promo: boolean;
+  promo_reason: string;
+}
+
+@Component({
+  selector: 'app-new-order',
+  standalone: true,
+  imports: [CommonModule, FormsModule, RouterLink, GoogleMapsAddressInputComponent],
+  templateUrl: './new-order.component.html',
+  styleUrl: './new-order.component.scss',
+})
+export class NewOrderComponent implements OnInit, OnDestroy {
+  private readonly api = inject(ApiService);
+  private readonly toast = inject(ToastService);
+  private readonly router = inject(Router);
+
+  // Customer fields
+  customerPhone = '';
+  customerName = '';
+  private lastAutoFilledName: string | null = null;
+  private lastMatchedPhone: string | null = null;
+
+  readonly phoneSearching = signal(false);
+  readonly foundCustomer = signal<Customer | null>(null);
+  readonly phoneSuggestions = signal<Array<{ id: number; phone: string; name: string; addresses_count: number }>>([]);
+
+  // Address fields
+  readonly selectedAddressId = signal<number | null>(null);
+  readonly useNewAddress = signal(true);
+  newAddressText = '';
+  newAddressReferences = '';
+  newAddressLabel = '';
+  newAddressPlaceId: string | null = null;
+  newAddressLat: number | null = null;
+  newAddressLng: number | null = null;
+  savedAddressReferences = '';
+
+  // Order notes
+  orderNotes = '';
+
+  // Catalog
+  readonly products = signal<Product[]>([]);
+  readonly loadingProducts = signal(true);
+  readonly selectedCategory = signal<string>('Todos');
+  productSearch = '';
+
+  // Cart & custom promo
+  readonly cart = signal<CartLine[]>([]);
+  showCustomPromoBox = false;
+  customPromoName = '';
+  customPromoQty = 1;
+  customPromoReason = 'Promoción gratis';
+
+  readonly submitting = signal(false);
+  readonly formError = signal<string | null>(null);
+
+  private uidCounter = 1;
+  private readonly phoneInput$ = new Subject<string>();
+  private sub?: Subscription;
+
+  readonly categories = computed(() => {
+    const set = new Set(this.products().map((p) => p.category));
+    return ['Todos', ...Array.from(set)];
+  });
+
+  readonly filteredProducts = computed(() => {
+    const cat = this.selectedCategory();
+    const term = this.productSearch.trim().toLowerCase();
+    return this.products().filter((p) => {
+      const matchCat = cat === 'Todos' || p.category === cat;
+      const matchTerm =
+        !term ||
+        p.name.toLowerCase().includes(term) ||
+        (p.description ?? '').toLowerCase().includes(term);
+      return matchCat && matchTerm;
+    });
+  });
+
+  readonly totalPaidItems = computed(() =>
+    this.cart()
+      .filter((l) => !l.is_promo)
+      .reduce((sum, l) => sum + l.quantity, 0)
+  );
+
+  readonly totalFreeItems = computed(() =>
+    this.cart()
+      .filter((l) => l.is_promo)
+      .reduce((sum, l) => sum + l.quantity, 0)
+  );
+
+  readonly orderTotal = computed(() =>
+    Number(
+      this.cart()
+        .reduce((sum, l) => sum + (l.is_promo ? 0 : l.unit_price * l.quantity), 0)
+        .toFixed(2)
+    )
+  );
+
+  readonly promoSavings = computed(() =>
+    Number(
+      this.cart()
+        .filter((l) => l.is_promo)
+        .reduce((sum, l) => sum + l.unit_price * l.quantity, 0)
+        .toFixed(2)
+    )
+  );
+
+  readonly selectedSavedAddress = computed<CustomerAddress | null>(() => {
+    const id = this.selectedAddressId();
+    const cust = this.foundCustomer();
+    if (!id || !cust?.addresses) return null;
+    return cust.addresses.find((a) => a.id === id) ?? null;
+  });
+
+  ngOnInit(): void {
+    this.loadCatalog();
+
+    this.sub = this.phoneInput$
+      .pipe(
+        debounceTime(260),
+        distinctUntilChanged(),
+        tap((raw) => {
+          const digits = raw.replace(/\D+/g, '');
+          if (digits.length < 3) {
+            this.phoneSearching.set(false);
+            this.phoneSuggestions.set([]);
+            if (this.foundCustomer()) {
+              this.resetMatchedCustomer();
+            }
+          } else {
+            this.phoneSearching.set(true);
+          }
+        }),
+        switchMap((raw) => {
+          const digits = raw.replace(/\D+/g, '');
+          if (digits.length < 3) {
+            return of(null);
+          }
+          return this.api.lookupCustomerByPhone(raw);
+        })
+      )
+      .subscribe({
+        next: (res) => {
+          this.phoneSearching.set(false);
+          if (!res) return;
+
+          if (res.found && res.customer) {
+            this.applyMatchedCustomer(res.customer);
+            this.phoneSuggestions.set([]);
+          } else {
+            if (this.foundCustomer() && this.lastMatchedPhone !== res.normalized_phone) {
+              this.resetMatchedCustomer();
+            }
+            this.phoneSuggestions.set(res.suggestions ?? []);
+          }
+        },
+        error: () => {
+          this.phoneSearching.set(false);
+        },
+      });
+  }
+
+  ngOnDestroy(): void {
+    this.sub?.unsubscribe();
+  }
+
+  loadCatalog(): void {
+    this.loadingProducts.set(true);
+    this.api.getProducts({ active_only: true }).subscribe({
+      next: (list) => {
+        this.products.set(list);
+        this.loadingProducts.set(false);
+      },
+      error: () => {
+        this.loadingProducts.set(false);
+        this.toast.error('No se pudo cargar el catálogo de productos.');
+      },
+    });
+  }
+
+  onPhoneChange(value: string): void {
+    this.customerPhone = value;
+    this.phoneInput$.next(value);
+  }
+
+  get hasValidPhoneLength(): boolean {
+    return this.customerPhone.replace(/\D+/g, '').length >= 7;
+  }
+
+  pickSuggestedPhone(phone: string): void {
+    this.customerPhone = phone;
+    this.phoneSuggestions.set([]);
+    this.phoneSearching.set(true);
+    this.api.lookupCustomerByPhone(phone).subscribe({
+      next: (res) => {
+        this.phoneSearching.set(false);
+        if (res.found && res.customer) {
+          this.applyMatchedCustomer(res.customer);
+        }
+      },
+      error: () => this.phoneSearching.set(false),
+    });
+  }
+
+  private applyMatchedCustomer(customer: Customer): void {
+    this.foundCustomer.set(customer);
+    this.lastMatchedPhone = customer.phone;
+    this.customerName = customer.name;
+    this.lastAutoFilledName = customer.name;
+
+    const addresses = customer.addresses ?? [];
+    if (addresses.length > 0) {
+      this.selectSavedAddress(addresses[0]);
+    } else {
+      this.selectedAddressId.set(null);
+      this.useNewAddress.set(true);
+    }
+  }
+
+  private resetMatchedCustomer(): void {
+    this.foundCustomer.set(null);
+    this.lastMatchedPhone = null;
+    this.selectedAddressId.set(null);
+    this.useNewAddress.set(true);
+    if (this.lastAutoFilledName !== null && this.customerName === this.lastAutoFilledName) {
+      this.customerName = '';
+    }
+    this.lastAutoFilledName = null;
+  }
+
+  selectSavedAddress(addr: CustomerAddress): void {
+    this.selectedAddressId.set(addr.id);
+    this.useNewAddress.set(false);
+    this.savedAddressReferences = addr.references ?? '';
+  }
+
+  switchToNewAddress(): void {
+    this.selectedAddressId.set(null);
+    this.useNewAddress.set(true);
+  }
+
+  onGoogleAddressChange(payload: SelectedAddressPayload): void {
+    this.newAddressText = payload.address;
+    this.newAddressPlaceId = payload.place_id;
+    this.newAddressLat = payload.latitude;
+    this.newAddressLng = payload.longitude;
+  }
+
+  addProductToCart(product: Product, asPromo = false): void {
+    const existing = this.cart().find(
+      (item) => item.product_id === product.id && item.is_promo === asPromo
+    );
+
+    if (existing) {
+      this.cart.update((lines) =>
+        lines.map((l) => (l.uid === existing.uid ? { ...l, quantity: l.quantity + 1 } : l))
+      );
+      return;
+    }
+
+    this.cart.update((lines) => [
+      ...lines,
+      {
+        uid: `line_${this.uidCounter++}`,
+        product_id: product.id,
+        product_name: product.name,
+        unit_price: product.price,
+        quantity: 1,
+        is_promo: asPromo,
+        promo_reason: asPromo ? 'Promoción gratis' : '',
+      },
+    ]);
+  }
+
+  addCustomPromoItem(): void {
+    const name = this.customPromoName.trim();
+    if (!name) {
+      this.toast.error('Escribe el nombre del producto gratis de promoción.');
+      return;
+    }
+
+    this.cart.update((lines) => [
+      ...lines,
+      {
+        uid: `line_${this.uidCounter++}`,
+        product_id: null,
+        product_name: name,
+        unit_price: 0,
+        quantity: Math.max(1, Number(this.customPromoQty) || 1),
+        is_promo: true,
+        promo_reason: this.customPromoReason.trim() || 'Promoción gratis',
+      },
+    ]);
+
+    this.customPromoName = '';
+    this.customPromoQty = 1;
+    this.customPromoReason = 'Promoción gratis';
+    this.showCustomPromoBox = false;
+  }
+
+  changeQuantity(uid: string, delta: number): void {
+    this.cart.update((lines) =>
+      lines
+        .map((l) => (l.uid === uid ? { ...l, quantity: l.quantity + delta } : l))
+        .filter((l) => l.quantity > 0)
+    );
+  }
+
+  toggleLinePromo(uid: string): void {
+    this.cart.update((lines) =>
+      lines.map((l) => {
+        if (l.uid !== uid) return l;
+        // Custom ad-hoc promo without catalog product stays promo
+        if (l.product_id === null) return l;
+        const nextPromo = !l.is_promo;
+        return {
+          ...l,
+          is_promo: nextPromo,
+          promo_reason: nextPromo ? l.promo_reason || 'Promoción gratis' : '',
+        };
+      })
+    );
+  }
+
+  updatePromoReason(uid: string, reason: string): void {
+    this.cart.update((lines) =>
+      lines.map((l) => (l.uid === uid ? { ...l, promo_reason: reason } : l))
+    );
+  }
+
+  removeLine(uid: string): void {
+    this.cart.update((lines) => lines.filter((l) => l.uid !== uid));
+  }
+
+  submitOrder(): void {
+    this.formError.set(null);
+
+    const normalizedDigits = this.customerPhone.replace(/\D+/g, '');
+    if (normalizedDigits.length < 7) {
+      this.formError.set('Ingresa un número de celular válido (mínimo 7 dígitos).');
+      return;
+    }
+
+    if (this.customerName.trim().length < 2) {
+      this.formError.set('Ingresa el nombre del cliente.');
+      return;
+    }
+
+    const savedAddr = this.selectedSavedAddress();
+    const usingSaved = !this.useNewAddress() && savedAddr !== null;
+    const deliveryAddress = usingSaved ? savedAddr.address : this.newAddressText.trim();
+
+    if (deliveryAddress.length < 4) {
+      this.formError.set('Selecciona un domicilio guardado o busca el domicilio de entrega.');
+      return;
+    }
+
+    if (this.cart().length === 0) {
+      this.formError.set('Agrega al menos un producto al pedido.');
+      return;
+    }
+
+    this.submitting.set(true);
+
+    this.api
+      .createOrder({
+        customer_phone: this.customerPhone.trim(),
+        customer_name: this.customerName.trim(),
+        customer_address_id: usingSaved ? savedAddr.id : null,
+        delivery_address: deliveryAddress,
+        delivery_references: usingSaved
+          ? this.savedAddressReferences.trim() || null
+          : this.newAddressReferences.trim() || null,
+        delivery_place_id: usingSaved ? savedAddr.place_id : this.newAddressPlaceId,
+        delivery_lat: usingSaved ? savedAddr.latitude : this.newAddressLat,
+        delivery_lng: usingSaved ? savedAddr.longitude : this.newAddressLng,
+        address_label: usingSaved ? savedAddr.label : this.newAddressLabel.trim() || null,
+        notes: this.orderNotes.trim() || null,
+        items: this.cart().map((item) => ({
+          product_id: item.product_id,
+          product_name: item.product_id ? undefined : item.product_name,
+          quantity: item.quantity,
+          is_promo: item.is_promo,
+          promo_reason: item.is_promo ? item.promo_reason.trim() || 'Promoción gratis' : null,
+        })),
+      })
+      .subscribe({
+        next: (order) => {
+          this.submitting.set(false);
+          this.toast.success(`Pedido ${order.order_number} registrado (${this.formatCurrency(order.total)}).`);
+          void this.router.navigate(['/pedidos']);
+        },
+        error: (err) => {
+          this.submitting.set(false);
+          const firstValidation = err?.error?.errors
+            ? Object.values(err.error.errors).flat()[0]
+            : null;
+          this.formError.set(
+            (firstValidation as string) ||
+              err?.error?.message ||
+              'No se pudo guardar el pedido. Revisa los datos.'
+          );
+        },
+      });
+  }
+
+  formatCurrency(amount: number): string {
+    return new Intl.NumberFormat('es-MX', {
+      style: 'currency',
+      currency: 'MXN',
+    }).format(amount ?? 0);
+  }
+}

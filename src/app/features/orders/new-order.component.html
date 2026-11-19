@@ -1,0 +1,425 @@
+<section class="new-order-page">
+  <div class="page-header">
+    <div>
+      <h1>Nuevo Pedido de Tacos Dorados</h1>
+      <p class="subtitle">Captura celular para buscar cliente en automático, domicilio y productos.</p>
+    </div>
+    <a routerLink="/pedidos" class="btn btn-outline">← Volver a Pedidos del Día</a>
+  </div>
+
+  <div class="order-layout">
+    <!-- LEFT COLUMN: Cliente, Domicilio, Catálogo -->
+    <div class="left-col">
+      <!-- PASO 1: CLIENTE -->
+      <section class="panel card">
+        <div class="panel-head">
+          <span class="step-badge">1</span>
+          <div>
+            <h2>Datos del Cliente</h2>
+            <small>Al capturar el celular, si el cliente ya pidió antes se llenan sus datos en automático.</small>
+          </div>
+        </div>
+
+        <div class="customer-fields">
+          <div class="form-field phone-field">
+            <label for="customerPhone">Celular / Teléfono *</label>
+            <div class="input-with-status">
+              <input
+                id="customerPhone"
+                type="tel"
+                [ngModel]="customerPhone"
+                (ngModelChange)="onPhoneChange($event)"
+                placeholder="Ej. 3312345678"
+                autocomplete="off"
+                autofocus
+              />
+              @if (phoneSearching()) {
+                <span class="lookup-badge">Buscando...</span>
+              } @else if (foundCustomer()) {
+                <span class="lookup-badge found">✓ Cliente encontrado</span>
+              } @else if (hasValidPhoneLength) {
+                <span class="lookup-badge new">Nuevo cliente</span>
+              }
+            </div>
+
+            @if (phoneSuggestions().length > 0 && !foundCustomer()) {
+              <div class="phone-suggestions">
+                <span class="sug-title">Coincidencias rápidas:</span>
+                @for (sug of phoneSuggestions(); track sug.id) {
+                  <button
+                    type="button"
+                    class="sug-chip"
+                    (click)="pickSuggestedPhone(sug.phone)"
+                  >
+                    📞 {{ sug.phone }} · <strong>{{ sug.name }}</strong>
+                    ({{ sug.addresses_count }} dom.)
+                  </button>
+                }
+              </div>
+            }
+          </div>
+
+          <div class="form-field">
+            <label for="customerName">Nombre completo *</label>
+            <input
+              id="customerName"
+              type="text"
+              [(ngModel)]="customerName"
+              placeholder="Ej. María López"
+            />
+          </div>
+        </div>
+
+        @if (foundCustomer(); as customer) {
+          <div class="returning-banner">
+            ✅ <strong>{{ customer.name }}</strong> ya está registrado(a) con
+            <strong>{{ customer.addresses?.length || 0 }}</strong> domicilio(s) guardado(s).
+          </div>
+        }
+      </section>
+
+      <!-- PASO 2: DOMICILIOS DEL CLIENTE + GOOGLE MAPS -->
+      <section class="panel card">
+        <div class="panel-head">
+          <span class="step-badge">2</span>
+          <div>
+            <h2>Domicilio de Entrega</h2>
+            <small>
+              @if (foundCustomer()?.addresses?.length) {
+                Desglose de domicilios registrados del cliente o búsqueda en Google Maps para un nuevo domicilio.
+              } @else {
+                Búsqueda de domicilio en vivo con Google Maps conforme escribes.
+              }
+            </small>
+          </div>
+        </div>
+
+        @if (foundCustomer()?.addresses?.length) {
+          <div class="saved-addresses-block">
+            <div class="saved-header">
+              <strong>Domicilios guardados de {{ foundCustomer()!.name }}:</strong>
+              <button
+                type="button"
+                class="btn btn-sm"
+                [class.btn-primary]="useNewAddress()"
+                [class.btn-outline]="!useNewAddress()"
+                (click)="switchToNewAddress()"
+              >
+                ➕ Nuevo domicilio
+              </button>
+            </div>
+
+            <div class="address-cards">
+              @for (addr of foundCustomer()!.addresses!; track addr.id) {
+                <button
+                  type="button"
+                  class="address-option"
+                  [class.selected]="!useNewAddress() && selectedAddressId() === addr.id"
+                  (click)="selectSavedAddress(addr)"
+                >
+                  <div class="addr-top">
+                    <span class="addr-label">{{ addr.label || 'Domicilio' }}</span>
+                    @if ($first) {
+                      <span class="badge badge-muted">Más reciente</span>
+                    }
+                  </div>
+                  <div class="addr-text">📍 {{ addr.address }}</div>
+                  @if (addr.references) {
+                    <div class="addr-refs">Ref: {{ addr.references }}</div>
+                  }
+                </button>
+              }
+            </div>
+
+            @if (!useNewAddress() && selectedSavedAddress()) {
+              <div class="form-field mt-sm">
+                <label for="savedRefs">Referencias para esta entrega (opcional)</label>
+                <input
+                  id="savedRefs"
+                  type="text"
+                  [(ngModel)]="savedAddressReferences"
+                  placeholder="Portón blanco, tocar timbre, entre calles..."
+                />
+              </div>
+            }
+          </div>
+        }
+
+        @if (useNewAddress() || !(foundCustomer()?.addresses?.length)) {
+          <div class="new-address-block">
+            @if (foundCustomer()?.addresses?.length) {
+              <div class="new-addr-title">Buscar y asignar un nuevo domicilio a este cliente:</div>
+            }
+
+            <app-google-maps-address-input
+              [address]="newAddressText"
+              [latitude]="newAddressLat"
+              [longitude]="newAddressLng"
+              [placeId]="newAddressPlaceId"
+              (addressChange)="onGoogleAddressChange($event)"
+            />
+
+            <div class="address-extra-grid">
+              <div class="form-field">
+                <label for="addrRefs">Referencias / Entre calles (opcional)</label>
+                <input
+                  id="addrRefs"
+                  type="text"
+                  [(ngModel)]="newAddressReferences"
+                  placeholder="Ej. Casa portón negro, frente al parque"
+                />
+              </div>
+
+              <div class="form-field">
+                <label for="addrLabel">Etiqueta del domicilio (opcional)</label>
+                <input
+                  id="addrLabel"
+                  type="text"
+                  [(ngModel)]="newAddressLabel"
+                  placeholder="Ej. Casa, Trabajo, Casa mamá"
+                />
+              </div>
+            </div>
+          </div>
+        }
+      </section>
+
+      <!-- PASO 3: CATÁLOGO DE PRODUCTOS Y PROMOCIONES -->
+      <section class="panel card">
+        <div class="panel-head catalog-head">
+          <div class="panel-head-left">
+            <span class="step-badge">3</span>
+            <div>
+              <h2>Catálogo de Productos y Promociones</h2>
+              <small>Agrega productos con precio normal o márcalos gratis como promoción.</small>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            class="btn btn-gold btn-sm"
+            (click)="showCustomPromoBox = !showCustomPromoBox"
+          >
+            🎁 {{ showCustomPromoBox ? 'Ocultar promo libre' : '+ Producto gratis personalizado' }}
+          </button>
+        </div>
+
+        @if (showCustomPromoBox) {
+          <div class="custom-promo-box">
+            <div class="promo-grid">
+              <div class="form-field">
+                <label>Producto gratis / cortesía</label>
+                <input
+                  type="text"
+                  [(ngModel)]="customPromoName"
+                  placeholder="Ej. Consomé chico cortesía, Salsa habanero extra..."
+                />
+              </div>
+              <div class="form-field qty-col">
+                <label>Cant.</label>
+                <input type="number" [(ngModel)]="customPromoQty" min="1" max="50" />
+              </div>
+              <div class="form-field">
+                <label>Motivo</label>
+                <input
+                  type="text"
+                  [(ngModel)]="customPromoReason"
+                  placeholder="Promoción / Cortesía"
+                />
+              </div>
+            </div>
+            <button type="button" class="btn btn-gold btn-sm" (click)="addCustomPromoItem()">
+              🎁 Agregar gratis al pedido ($0.00)
+            </button>
+          </div>
+        }
+
+        <div class="catalog-controls">
+          <div class="cat-pills">
+            @for (cat of categories(); track cat) {
+              <button
+                type="button"
+                class="cat-pill"
+                [class.active]="selectedCategory() === cat"
+                (click)="selectedCategory.set(cat)"
+              >
+                {{ cat }}
+              </button>
+            }
+          </div>
+
+          <input
+            type="text"
+            class="cat-search"
+            [(ngModel)]="productSearch"
+            placeholder="Filtrar producto..."
+          />
+        </div>
+
+        @if (loadingProducts()) {
+          <p class="muted-msg">Cargando catálogo...</p>
+        } @else if (filteredProducts().length === 0) {
+          <p class="muted-msg">No hay productos activos que coincidan con el filtro.</p>
+        } @else {
+          <div class="products-grid">
+            @for (product of filteredProducts(); track product.id) {
+              <div class="product-tile">
+                <div class="product-info">
+                  <span class="product-cat">{{ product.category }}</span>
+                  <strong>{{ product.name }}</strong>
+                  @if (product.description) {
+                    <small>{{ product.description }}</small>
+                  }
+                </div>
+                <div class="product-foot">
+                  <span class="product-price">{{ formatCurrency(product.price) }}</span>
+                  <div class="product-btns">
+                    <button
+                      type="button"
+                      class="btn btn-primary btn-sm"
+                      (click)="addProductToCart(product, false)"
+                    >
+                      + Agregar
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-gold btn-sm"
+                      title="Agregar gratis como promoción"
+                      (click)="addProductToCart(product, true)"
+                    >
+                      🎁 Gratis
+                    </button>
+                  </div>
+                </div>
+              </div>
+            }
+          </div>
+        }
+      </section>
+    </div>
+
+    <!-- RIGHT COLUMN: RESUMEN Y SUMA DEL PEDIDO -->
+    <aside class="right-col">
+      <div class="summary-sticky card">
+        <div class="summary-head">
+          <h2>🧾 Resumen del Pedido</h2>
+          <span class="badge badge-muted">
+            {{ totalPaidItems() }} con costo · {{ totalFreeItems() }} gratis
+          </span>
+        </div>
+
+        @if (cart().length === 0) {
+          <div class="empty-cart">
+            <p>Aún no has agregado productos.</p>
+            <small>Elige productos del catálogo o agrégalos como promoción gratis.</small>
+          </div>
+        } @else {
+          <div class="cart-lines">
+            @for (line of cart(); track line.uid) {
+              <div class="cart-line" [class.is-promo]="line.is_promo">
+                <div class="line-top">
+                  <div class="line-name">
+                    <strong>{{ line.product_name }}</strong>
+                    @if (line.is_promo) {
+                      <span class="badge badge-promo">🎁 GRATIS</span>
+                    } @else {
+                      <small>{{ formatCurrency(line.unit_price) }} c/u</small>
+                    }
+                  </div>
+                  <button
+                    type="button"
+                    class="remove-line"
+                    (click)="removeLine(line.uid)"
+                    title="Quitar del pedido"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div class="line-controls">
+                  <div class="qty-stepper">
+                    <button type="button" (click)="changeQuantity(line.uid, -1)">−</button>
+                    <span>{{ line.quantity }}</span>
+                    <button type="button" (click)="changeQuantity(line.uid, 1)">+</button>
+                  </div>
+
+                  @if (line.product_id !== null) {
+                    <button
+                      type="button"
+                      class="promo-toggle"
+                      [class.active]="line.is_promo"
+                      (click)="toggleLinePromo(line.uid)"
+                    >
+                      {{ line.is_promo ? '🎁 Es Promo ($0)' : 'Marcar gratis' }}
+                    </button>
+                  }
+
+                  <div class="line-total">
+                    @if (line.is_promo) {
+                      @if (line.unit_price > 0) {
+                        <del>{{ formatCurrency(line.unit_price * line.quantity) }}</del>
+                      }
+                      <strong class="text-green">$0.00</strong>
+                    } @else {
+                      <strong>{{ formatCurrency(line.unit_price * line.quantity) }}</strong>
+                    }
+                  </div>
+                </div>
+
+                @if (line.is_promo) {
+                  <input
+                    type="text"
+                    class="promo-reason-input"
+                    [ngModel]="line.promo_reason"
+                    (ngModelChange)="updatePromoReason(line.uid, $event)"
+                    placeholder="Motivo de promoción (ej. Promo 3x2, Cortesía)"
+                  />
+                }
+              </div>
+            }
+          </div>
+        }
+
+        <div class="form-field notes-field">
+          <label for="orderNotes">Notas del pedido (opcional)</label>
+          <textarea
+            id="orderNotes"
+            rows="2"
+            [(ngModel)]="orderNotes"
+            placeholder="Sin crema, salsa aparte, paga con billete de $500..."
+          ></textarea>
+        </div>
+
+        <div class="totals-box">
+          <div class="tot-row">
+            <span>Subtotal productos</span>
+            <span>{{ formatCurrency(orderTotal()) }}</span>
+          </div>
+          @if (promoSavings() > 0) {
+            <div class="tot-row promo-row">
+              <span>🎁 Valor en promociones gratis</span>
+              <span>− {{ formatCurrency(promoSavings()) }} (Gratis)</span>
+            </div>
+          }
+          <div class="tot-row grand-total">
+            <span>TOTAL DEL PEDIDO</span>
+            <strong>{{ formatCurrency(orderTotal()) }}</strong>
+          </div>
+        </div>
+
+        @if (formError()) {
+          <div class="alert alert-error">{{ formError() }}</div>
+        }
+
+        <button
+          type="button"
+          class="btn btn-primary btn-lg submit-order-btn"
+          [disabled]="submitting() || cart().length === 0"
+          (click)="submitOrder()"
+        >
+          {{ submitting() ? 'Guardando pedido...' : '✅ Guardar Pedido (' + formatCurrency(orderTotal()) + ')' }}
+        </button>
+      </div>
+    </aside>
+  </div>
+</section>

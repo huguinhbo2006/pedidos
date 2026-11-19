@@ -1,0 +1,69 @@
+<div class="app-shell">
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a routerLink="/pedidos" class="brand">
+        <span class="brand-icon">🌮</span>
+        <div class="brand-text">
+          <strong>Tacos Dorados</strong>
+          <small>Pedidos y Reparto</small>
+        </div>
+      </a>
+
+      <nav class="main-nav" aria-label="Navegación principal">
+        <a routerLink="/pedidos" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">
+          📋 Pedidos del Día
+        </a>
+        <a routerLink="/pedidos/nuevo" routerLinkActive="active" class="nav-cta">
+          ➕ Nuevo Pedido
+        </a>
+        <a routerLink="/catalogo" routerLinkActive="active">
+          🍽️ Catálogo
+        </a>
+        <a routerLink="/clientes" routerLinkActive="active">
+          👥 Clientes
+        </a>
+        <a routerLink="/historial" routerLinkActive="active">
+          🕒 Historial
+        </a>
+      </nav>
+
+      <div class="topbar-actions">
+        <button
+          type="button"
+          class="maps-status-btn"
+          [class.is-active]="mapsService.googleReady()"
+          (click)="showMapsModal.set(true)"
+          title="Configurar Google Maps API Key"
+        >
+          <span>🗺️</span>
+          <span>{{ mapsService.googleReady() ? 'Google Maps OK' : 'Config. Maps' }}</span>
+        </button>
+
+        <div class="user-pill">
+          <span class="avatar">{{ (auth.user()?.name || 'H').slice(0, 1) }}</span>
+          <span class="uname">{{ auth.user()?.username || 'hugo.perez' }}</span>
+        </div>
+
+        <button type="button" class="btn btn-outline btn-sm" (click)="logout()">
+          Salir
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="main-content">
+    <router-outlet />
+  </main>
+
+  <div class="toast-stack" aria-live="polite">
+    @for (t of toast.toasts(); track t.id) {
+      <div class="toast-item" [class]="'toast-' + t.type" (click)="toast.dismiss(t.id)">
+        <span>{{ t.text }}</span>
+      </div>
+    }
+  </div>
+
+  @if (showMapsModal()) {
+    <app-maps-settings-modal (closed)="showMapsModal.set(false)" />
+  }
+</div>
