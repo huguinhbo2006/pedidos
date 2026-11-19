@@ -10,11 +10,14 @@ class OrderItem extends Model
     protected $fillable = [
         'order_id',
         'product_id',
+        'package_id',
+        'item_type',
         'product_name',
         'unit_price',
         'quantity',
         'is_promo',
         'promo_reason',
+        'package_details',
         'line_total',
     ];
 
@@ -24,6 +27,7 @@ class OrderItem extends Model
             'unit_price' => 'float',
             'quantity' => 'integer',
             'is_promo' => 'boolean',
+            'package_details' => 'array',
             'line_total' => 'float',
         ];
     }
@@ -36,5 +40,10 @@ class OrderItem extends Model
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class);
+    }
+
+    public function package(): BelongsTo
+    {
+        return $this->belongsTo(Package::class);
     }
 }

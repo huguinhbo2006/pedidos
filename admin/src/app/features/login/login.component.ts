@@ -13,9 +13,9 @@ import { ToastService } from '../../core/services/toast.service';
     <div class="login-page">
       <div class="login-card card">
         <div class="brand-hero">
-          <div class="logo-circle">🌮</div>
-          <h1>Tacos Dorados</h1>
-          <p>Sistema de Pedidos y Entregas</p>
+          <img src="logo-mary.jpg" alt="Taquería Mary" class="logo-img" />
+          <h1>Taquería Mary</h1>
+          <p>Auténtica Comida Mexicana · Pedidos y Entregas</p>
         </div>
 
         <form (ngSubmit)="submit()" class="login-form">
@@ -89,17 +89,15 @@ import { ToastService } from '../../core/services/toast.service';
       text-align: center;
       margin-bottom: 1.65rem;
 
-      .logo-circle {
-        width: 66px;
-        height: 66px;
+      .logo-img {
+        width: 96px;
+        height: 96px;
+        object-fit: cover;
         margin: 0 auto 0.85rem;
         border-radius: 20px;
-        background: linear-gradient(135deg, var(--brand-primary), var(--brand-gold));
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 2rem;
-        box-shadow: 0 8px 20px rgba(200, 75, 36, 0.25);
+        border: 2px solid var(--border-light);
+        box-shadow: 0 8px 20px rgba(200, 75, 36, 0.22);
+        display: block;
       }
 
       h1 {

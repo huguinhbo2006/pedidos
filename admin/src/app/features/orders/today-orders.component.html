@@ -113,10 +113,26 @@
                 <li [class.promo-line]="item.is_promo">
                   <div class="item-left">
                     <span class="qty">{{ item.quantity }}x</span>
-                    <span class="pname">{{ item.product_name }}</span>
-                    @if (item.is_promo) {
-                      <span class="badge badge-promo">🎁 GRATIS · {{ item.promo_reason || 'Promoción' }}</span>
-                    }
+                    <div class="item-main-col">
+                      <div class="item-title-row">
+                        <span class="pname">{{ item.product_name }}</span>
+                        @if (item.is_promo) {
+                          <span class="badge badge-promo">🎁 REGALO · {{ item.promo_reason || 'Promoción' }}</span>
+                        }
+                      </div>
+                      @if (item.package_details?.length) {
+                        <ul class="pkg-sublist">
+                          @for (det of item.package_details!; track $index) {
+                            <li>
+                              • {{ det.quantity }}x {{ det.label }}
+                              @if (det.extra_price > 0) {
+                                <span>(+{{ formatCurrency(det.extra_price) }})</span>
+                              }
+                            </li>
+                          }
+                        </ul>
+                      }
+                    </div>
                   </div>
                   <div class="item-price">
                     @if (item.is_promo) {
@@ -148,13 +164,25 @@
               }
             </div>
 
-            <button
-              type="button"
-              class="btn btn-success delivered-flag-btn"
-              (click)="openConfirmDeliver(order)"
-            >
-              🚩 Entregado
-            </button>
+            <div class="foot-btns">
+              <button
+                type="button"
+                class="btn btn-outline btn-sm"
+                [disabled]="downloadingPdfId() === order.id"
+                (click)="openPdf(order)"
+                title="Abrir / descargar comprobante PDF"
+              >
+                {{ downloadingPdfId() === order.id ? 'PDF...' : '📄 PDF' }}
+              </button>
+
+              <button
+                type="button"
+                class="btn btn-success delivered-flag-btn"
+                (click)="openConfirmDeliver(order)"
+              >
+                🚩 Entregado
+              </button>
+            </div>
           </div>
         </article>
       }

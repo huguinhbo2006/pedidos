@@ -8,27 +8,43 @@ import { ToastService } from '../../core/services/toast.service';
 import {
   Customer,
   CustomerAddress,
+  MealPackage,
+  PackageSelectionItem,
   Product,
+  Promotion,
 } from '../../core/models/api.models';
 import {
   GoogleMapsAddressInputComponent,
   SelectedAddressPayload,
 } from '../../shared/google-maps-address-input/google-maps-address-input.component';
+import {
+  ConfiguredPackageResult,
+  PackageBuilderModalComponent,
+} from '../../shared/package-builder-modal/package-builder-modal.component';
 
 interface CartLine {
   uid: string;
+  item_type: 'product' | 'package' | 'promo_custom';
   product_id: number | null;
+  package_id: number | null;
   product_name: string;
   unit_price: number;
   quantity: number;
   is_promo: boolean;
   promo_reason: string;
+  package_details?: PackageSelectionItem[] | null;
 }
 
 @Component({
   selector: 'app-new-order',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, GoogleMapsAddressInputComponent],
+  imports: [
+    CommonModule,
+    FormsModule,
+    RouterLink,
+    GoogleMapsAddressInputComponent,
+    PackageBuilderModalComponent,
+  ],
   templateUrl: './new-order.component.html',
   styleUrl: './new-order.component.scss',
 })
@@ -61,18 +77,25 @@ export class NewOrderComponent implements OnInit, OnDestroy {
   // Order notes
   orderNotes = '';
 
-  // Catalog
+  // Catalog, Packages & Promotions
+  readonly catalogMode = signal<'packages' | 'products'>('packages');
   readonly products = signal<Product[]>([]);
+  readonly packages = signal<MealPackage[]>([]);
+  readonly promotions = signal<Promotion[]>([]);
   readonly loadingProducts = signal(true);
   readonly selectedCategory = signal<string>('Todos');
   productSearch = '';
+
+  // Package builder modal & package promotion gift distribution
+  readonly buildingPackage = signal<MealPackage | null>(null);
+  promoGiftCounts: Record<string, number> = {};
 
   // Cart & custom promo
   readonly cart = signal<CartLine[]>([]);
   showCustomPromoBox = false;
   customPromoName = '';
   customPromoQty = 1;
-  customPromoReason = 'Promoción gratis';
+  customPromoReason = 'Regalo / Promoción';
 
   readonly submitting = signal(false);
   readonly formError = signal<string | null>(null);
@@ -98,6 +121,14 @@ export class NewOrderComponent implements OnInit, OnDestroy {
       return matchCat && matchTerm;
     });
   });
+
+  readonly hasPackageInCart = computed(() =>
+    this.cart().some((l) => l.item_type === 'package')
+  );
+
+  readonly packagePromotions = computed(() =>
+    this.promotions().filter((p) => p.is_active && p.applies_to_packages)
+  );
 
   readonly totalPaidItems = computed(() =>
     this.cart()
@@ -199,6 +230,17 @@ export class NewOrderComponent implements OnInit, OnDestroy {
         this.toast.error('No se pudo cargar el catálogo de productos.');
       },
     });
+    this.api.getPackages(true).subscribe({
+      next: (list) => {
+        this.packages.set(list);
+        if (list.length === 0) {
+          this.catalogMode.set('products');
+        }
+      },
+    });
+    this.api.getPromotions(true).subscribe({
+      next: (list) => this.promotions.set(list),
+    });
   }
 
   onPhoneChange(value: string): void {
@@ -269,9 +311,94 @@ export class NewOrderComponent implements OnInit, OnDestroy {
     this.newAddressLng = payload.longitude;
   }
 
+  openPackageBuilder(pkg: MealPackage): void {
+    this.buildingPackage.set(pkg);
+  }
+
+  onPackageConfigured(result: ConfiguredPackageResult): void {
+    this.buildingPackage.set(null);
+    this.cart.update((lines) => [
+      ...lines,
+      {
+        uid: `line_${this.uidCounter++}`,
+        item_type: 'package',
+        product_id: null,
+        package_id: result.package.id,
+        product_name: result.package.name,
+        unit_price: result.unitPrice,
+        quantity: 1,
+        is_promo: false,
+        promo_reason: '',
+        package_details: result.selections,
+      },
+    ]);
+    this.toast.success(`${result.package.name} agregado al pedido.`);
+  }
+
+  getPromoOptQty(promoId: number, option: string): number {
+    return this.promoGiftCounts[`${promoId}::${option}`] ?? 0;
+  }
+
+  promoTotalSelected(promo: Promotion): number {
+    return (promo.allowed_options ?? []).reduce(
+      (sum, opt) => sum + this.getPromoOptQty(promo.id, opt),
+      0
+    );
+  }
+
+  adjustPromoGift(promo: Promotion, option: string, delta: number): void {
+    const key = `${promo.id}::${option}`;
+    const current = this.promoGiftCounts[key] ?? 0;
+    const otherTotal = this.promoTotalSelected(promo) - current;
+    const maxForThis = Math.max(0, promo.max_quantity - otherTotal);
+    const next = Math.min(maxForThis, Math.max(0, current + delta));
+    this.promoGiftCounts[key] = next;
+  }
+
+  fillPromoGift(promo: Promotion, option: string): void {
+    for (const opt of promo.allowed_options ?? []) {
+      this.promoGiftCounts[`${promo.id}::${opt}`] = opt === option ? promo.max_quantity : 0;
+    }
+  }
+
+  applyPackagePromotion(promo: Promotion): void {
+    const chosen = (promo.allowed_options ?? [])
+      .map((opt) => ({ opt, qty: this.getPromoOptQty(promo.id, opt) }))
+      .filter((x) => x.qty > 0);
+
+    if (chosen.length === 0) {
+      this.toast.error('Selecciona al menos 1 unidad del regalo promocional.');
+      return;
+    }
+
+    const summary = chosen.map((x) => `${x.qty}x ${x.opt}`).join(', ');
+    this.cart.update((lines) => [
+      ...lines,
+      {
+        uid: `line_${this.uidCounter++}`,
+        item_type: 'promo_custom',
+        product_id: null,
+        package_id: null,
+        product_name: `Regalo: ${summary}`,
+        unit_price: 0,
+        quantity: 1,
+        is_promo: true,
+        promo_reason: promo.name,
+      },
+    ]);
+
+    for (const opt of promo.allowed_options ?? []) {
+      this.promoGiftCounts[`${promo.id}::${opt}`] = 0;
+    }
+    this.toast.success(`Regalo "${promo.name}" agregado ($0.00).`);
+  }
+
   addProductToCart(product: Product, asPromo = false): void {
     const existing = this.cart().find(
-      (item) => item.product_id === product.id && item.is_promo === asPromo
+      (item) =>
+        item.item_type === 'product' &&
+        item.product_id === product.id &&
+        item.is_promo === asPromo
     );
 
     if (existing) {
@@ -285,12 +412,14 @@ export class NewOrderComponent implements OnInit, OnDestroy {
       ...lines,
       {
         uid: `line_${this.uidCounter++}`,
+        item_type: 'product',
         product_id: product.id,
+        package_id: null,
         product_name: product.name,
         unit_price: product.price,
         quantity: 1,
         is_promo: asPromo,
-        promo_reason: asPromo ? 'Promoción gratis' : '',
+        promo_reason: asPromo ? 'Regalo / Promoción' : '',
       },
     ]);
   }
@@ -298,7 +427,7 @@ export class NewOrderComponent implements OnInit, OnDestroy {
   addCustomPromoItem(): void {
     const name = this.customPromoName.trim();
     if (!name) {
-      this.toast.error('Escribe el nombre del producto gratis de promoción.');
+      this.toast.error('Escribe el nombre del regalo / promoción.');
       return;
     }
 
@@ -306,18 +435,20 @@ export class NewOrderComponent implements OnInit, OnDestroy {
       ...lines,
       {
         uid: `line_${this.uidCounter++}`,
+        item_type: 'promo_custom',
         product_id: null,
+        package_id: null,
         product_name: name,
         unit_price: 0,
         quantity: Math.max(1, Number(this.customPromoQty) || 1),
         is_promo: true,
-        promo_reason: this.customPromoReason.trim() || 'Promoción gratis',
+        promo_reason: this.customPromoReason.trim() || 'Regalo / Promoción',
       },
     ]);
 
     this.customPromoName = '';
     this.customPromoQty = 1;
-    this.customPromoReason = 'Promoción gratis';
+    this.customPromoReason = 'Regalo / Promoción';
     this.showCustomPromoBox = false;
   }
 
@@ -333,13 +464,12 @@ export class NewOrderComponent implements OnInit, OnDestroy {
     this.cart.update((lines) =>
       lines.map((l) => {
         if (l.uid !== uid) return l;
-        // Custom ad-hoc promo without catalog product stays promo
-        if (l.product_id === null) return l;
+        if (l.item_type === 'promo_custom') return l;
         const nextPromo = !l.is_promo;
         return {
           ...l,
           is_promo: nextPromo,
-          promo_reason: nextPromo ? l.promo_reason || 'Promoción gratis' : '',
+          promo_reason: nextPromo ? l.promo_reason || 'Regalo / Promoción' : '',
         };
       })
     );
@@ -355,7 +485,7 @@ export class NewOrderComponent implements OnInit, OnDestroy {
     this.cart.update((lines) => lines.filter((l) => l.uid !== uid));
   }
 
-  submitOrder(): void {
+  submitOrder(openPdfAfter = false): void {
     this.formError.set(null);
 
     const normalizedDigits = this.customerPhone.replace(/\D+/g, '');
@@ -379,7 +509,7 @@ export class NewOrderComponent implements OnInit, OnDestroy {
     }
 
     if (this.cart().length === 0) {
-      this.formError.set('Agrega al menos un producto al pedido.');
+      this.formError.set('Agrega al menos un producto o paquete al pedido.');
       return;
     }
 
@@ -400,18 +530,32 @@ export class NewOrderComponent implements OnInit, OnDestroy {
         address_label: usingSaved ? savedAddr.label : this.newAddressLabel.trim() || null,
         notes: this.orderNotes.trim() || null,
         items: this.cart().map((item) => ({
+          item_type: item.item_type,
           product_id: item.product_id,
-          product_name: item.product_id ? undefined : item.product_name,
+          package_id: item.package_id,
+          product_name: item.item_type === 'promo_custom' ? item.product_name : undefined,
           quantity: item.quantity,
           is_promo: item.is_promo,
-          promo_reason: item.is_promo ? item.promo_reason.trim() || 'Promoción gratis' : null,
+          promo_reason: item.is_promo ? item.promo_reason.trim() || 'Regalo / Promoción' : null,
+          package_details: item.package_details ?? null,
         })),
       })
       .subscribe({
         next: (order) => {
           this.submitting.set(false);
           this.toast.success(`Pedido ${order.order_number} registrado (${this.formatCurrency(order.total)}).`);
-          void this.router.navigate(['/pedidos']);
+          if (openPdfAfter) {
+            this.api.downloadOrderPdf(order.id).subscribe({
+              next: (blob) => {
+                const url = URL.createObjectURL(blob);
+                window.open(url, '_blank');
+                void this.router.navigate(['/pedidos']);
+              },
+              error: () => void this.router.navigate(['/pedidos']),
+            });
+          } else {
+            void this.router.navigate(['/pedidos']);
+          }
         },
         error: (err) => {
           this.submitting.set(false);

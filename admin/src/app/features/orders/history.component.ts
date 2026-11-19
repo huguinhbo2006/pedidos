@@ -73,7 +73,10 @@ import { Order } from '../../core/models/api.models';
                   @for (item of order.items; track item.id ?? $index) {
                     <span class="item-chip" [class.promo]="item.is_promo">
                       {{ item.quantity }}x {{ item.product_name }}
-                      @if (item.is_promo) { (🎁 Gratis) }
+                      @if (item.package_details?.length) {
+                        ({{ formatPkgDetails(item.package_details!) }})
+                      }
+                      @if (item.is_promo) { (🎁 Regalo) }
                     </span>
                   }
                 </div>
@@ -81,9 +84,19 @@ import { Order } from '../../core/models/api.models';
 
               <div class="hist-foot">
                 <strong class="total">{{ formatCurrency(order.total) }}</strong>
-                @if (order.delivered_at) {
-                  <small class="delivered-at">Entregado: {{ order.delivered_at | date:'short' }}</small>
-                }
+                <div class="foot-right">
+                  @if (order.delivered_at) {
+                    <small class="delivered-at">Entregado: {{ order.delivered_at | date:'short' }}</small>
+                  }
+                  <button
+                    type="button"
+                    class="btn btn-outline btn-sm"
+                    [disabled]="downloadingPdfId() === order.id"
+                    (click)="openPdf(order)"
+                  >
+                    {{ downloadingPdfId() === order.id ? 'PDF...' : '📄 PDF' }}
+                  </button>
+                </div>
               </div>
             </article>
           }
@@ -156,6 +169,7 @@ import { Order } from '../../core/models/api.models';
       border-top: 1px solid var(--border-light);
       padding-top: 0.55rem;
       .total { font-size: 1.1rem; font-weight: 800; color: var(--brand-primary); }
+      .foot-right { display: flex; align-items: center; gap: 0.65rem; }
       .delivered-at { font-size: 0.78rem; color: var(--brand-green); font-weight: 600; }
     }
   `],
@@ -166,6 +180,7 @@ export class HistoryComponent implements OnInit {
 
   readonly orders = signal<Order[]>([]);
   readonly loading = signal(true);
+  readonly downloadingPdfId = signal<number | null>(null);
 
   dateFilter = this.todayIso();
   statusFilter: 'all' | 'pending' | 'delivered' = 'all';
@@ -206,6 +221,25 @@ export class HistoryComponent implements OnInit {
           this.toast.error('No se pudo cargar el historial.');
         },
       });
+  }
+
+  formatPkgDetails(details: Array<{ label: string; quantity: number }>): string {
+    return details.map((d) => `${d.quantity}x ${d.label}`).join(', ');
+  }
+
+  openPdf(order: Order): void {
+    this.downloadingPdfId.set(order.id);
+    this.api.downloadOrderPdf(order.id).subscribe({
+      next: (blob) => {
+        this.downloadingPdfId.set(null);
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+      },
+      error: () => {
+        this.downloadingPdfId.set(null);
+        this.toast.error('No se pudo generar el PDF.');
+      },
+    });
   }
 
   formatCurrency(amount: number): string {

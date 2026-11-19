@@ -6,10 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\CustomerAddress;
 use App\Models\Order;
+use App\Models\Package;
 use App\Models\Product;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -115,11 +118,19 @@ class OrderController extends Controller
             'address_label' => ['nullable', 'string', 'max:60'],
             'notes' => ['nullable', 'string', 'max:1000'],
             'items' => ['required', 'array', 'min:1'],
+            'items.*.item_type' => ['sometimes', 'in:product,package,promo_custom'],
             'items.*.product_id' => ['nullable', 'integer'],
+            'items.*.package_id' => ['nullable', 'integer'],
             'items.*.product_name' => ['nullable', 'string', 'max:150'],
             'items.*.quantity' => ['required', 'integer', 'min:1', 'max:999'],
             'items.*.is_promo' => ['required', 'boolean'],
             'items.*.promo_reason' => ['nullable', 'string', 'max:120'],
+            'items.*.package_details' => ['nullable', 'array'],
+            'items.*.package_details.*.group_id' => ['nullable', 'integer'],
+            'items.*.package_details.*.option_id' => ['nullable', 'integer'],
+            'items.*.package_details.*.group' => ['required_with:items.*.package_details', 'string', 'max:150'],
+            'items.*.package_details.*.label' => ['required_with:items.*.package_details', 'string', 'max:150'],
+            'items.*.package_details.*.quantity' => ['required_with:items.*.package_details', 'integer', 'min:1', 'max:9999'],
         ]);
 
         $normalizedPhone = Customer::normalizePhone($data['customer_phone']);
@@ -202,14 +213,12 @@ class OrderController extends Controller
                 ]);
             }
 
-            // 3. Validate items & compute subtotal, promo savings, and total
-            $productIds = collect($data['items'])
-                ->pluck('product_id')
-                ->filter()
-                ->unique()
-                ->values();
-
+            // 3. Validate items (products, packages, custom gifts) & compute totals securely
+            $productIds = collect($data['items'])->pluck('product_id')->filter()->unique()->values();
             $productsById = Product::whereIn('id', $productIds)->get()->keyBy('id');
+
+            $packageIds = collect($data['items'])->pluck('package_id')->filter()->unique()->values();
+            $packagesById = Package::with('groups.options')->whereIn('id', $packageIds)->get()->keyBy('id');
 
             $preparedItems = [];
             $subtotal = 0.0;
@@ -219,8 +228,29 @@ class OrderController extends Controller
                 $isPromo = (bool) $rawItem['is_promo'];
                 $qty = (int) $rawItem['quantity'];
                 $productId = $rawItem['product_id'] ?? null;
+                $packageId = $rawItem['package_id'] ?? null;
+                $itemType = $rawItem['item_type'] ?? ($packageId ? 'package' : ($productId ? 'product' : 'promo_custom'));
+                $packageDetails = null;
 
-                if ($productId) {
+                if ($itemType === 'package') {
+                    $package = $packageId ? $packagesById->get($packageId) : null;
+                    if (! $package) {
+                        throw ValidationException::withMessages([
+                            "items.{$index}.package_id" => ['El paquete seleccionado no existe.'],
+                        ]);
+                    }
+
+                    [$normalizedDetails, $extraCostPerPackage] = $this->resolvePackageSelections(
+                        $package,
+                        $rawItem['package_details'] ?? [],
+                        $index
+                    );
+
+                    $packageDetails = $normalizedDetails;
+                    $productName = $package->name;
+                    $unitPrice = round((float) $package->base_price + $extraCostPerPackage, 2);
+                    $productId = null;
+                } elseif ($productId) {
                     $product = $productsById->get($productId);
                     if (! $product) {
                         throw ValidationException::withMessages([
@@ -229,14 +259,16 @@ class OrderController extends Controller
                     }
                     $productName = $product->name;
                     $unitPrice = (float) $product->price;
+                    $itemType = 'product';
                 } else {
                     if (! $isPromo || empty(trim((string) ($rawItem['product_name'] ?? '')))) {
                         throw ValidationException::withMessages([
-                            "items.{$index}.product_name" => ['Selecciona un producto del catálogo o indica el nombre de la promoción gratis.'],
+                            "items.{$index}.product_name" => ['Selecciona un producto del catálogo o indica el nombre de la promoción/regalo.'],
                         ]);
                     }
                     $productName = trim((string) $rawItem['product_name']);
                     $unitPrice = 0.0;
+                    $itemType = 'promo_custom';
                 }
 
                 $lineTotal = $isPromo ? 0.0 : round($unitPrice * $qty, 2);
@@ -250,16 +282,19 @@ class OrderController extends Controller
                 if ($isPromo) {
                     $promoReason = ! empty(trim((string) ($rawItem['promo_reason'] ?? '')))
                         ? trim((string) $rawItem['promo_reason'])
-                        : 'Promoción gratis';
+                        : 'Regalo / Promoción';
                 }
 
                 $preparedItems[] = [
                     'product_id' => $productId,
+                    'package_id' => $packageId,
+                    'item_type' => $itemType,
                     'product_name' => $productName,
                     'unit_price' => $unitPrice,
                     'quantity' => $qty,
                     'is_promo' => $isPromo,
                     'promo_reason' => $promoReason,
+                    'package_details' => $packageDetails,
                     'line_total' => $lineTotal,
                 ];
             }
@@ -320,5 +355,107 @@ class OrderController extends Controller
             'message' => "Pedido {$order->order_number} marcado como entregado.",
             'order' => $order->load('items'),
         ]);
+    }
+
+    public function pdf(Order $order): Response
+    {
+        $order->load('items');
+
+        $logoBase64 = null;
+        $logoPath = public_path('images/logo-mary.jpg');
+        if (is_file($logoPath)) {
+            $logoBase64 = 'data:image/jpeg;base64,' . base64_encode((string) file_get_contents($logoPath));
+        }
+
+        $pdf = Pdf::loadView('pdf.order', [
+            'order' => $order,
+            'logoBase64' => $logoBase64,
+        ])->setPaper('letter', 'portrait');
+
+        return $pdf->download("pedido-{$order->order_number}.pdf");
+    }
+
+    /**
+     * Validate package selections against package groups/options and calculate extra price sum.
+     *
+     * @return array{0: array<int, array<string, mixed>>, 1: float}
+     */
+    private function resolvePackageSelections(Package $package, array $rawSelections, int $itemIndex): array
+    {
+        $groups = $package->groups;
+        $groupCounts = [];
+        $normalized = [];
+        $extraSum = 0.0;
+
+        foreach ($rawSelections as $sel) {
+            $selQty = (int) ($sel['quantity'] ?? 0);
+            if ($selQty <= 0) {
+                continue;
+            }
+
+            $matchedGroup = null;
+            if (! empty($sel['group_id'])) {
+                $matchedGroup = $groups->firstWhere('id', (int) $sel['group_id']);
+            }
+            if (! $matchedGroup) {
+                $matchedGroup = $groups->first(
+                    fn ($g) => mb_strtolower(trim($g->name)) === mb_strtolower(trim((string) ($sel['group'] ?? '')))
+                );
+            }
+            if (! $matchedGroup) {
+                throw ValidationException::withMessages([
+                    "items.{$itemIndex}.package_details" => ["Grupo inválido dentro del paquete {$package->name}."],
+                ]);
+            }
+
+            $matchedOption = null;
+            if (! empty($sel['option_id'])) {
+                $matchedOption = $matchedGroup->options->firstWhere('id', (int) $sel['option_id']);
+            }
+            if (! $matchedOption) {
+                $matchedOption = $matchedGroup->options->first(
+                    fn ($o) => mb_strtolower(trim($o->label)) === mb_strtolower(trim((string) ($sel['label'] ?? '')))
+                );
+            }
+            if (! $matchedOption) {
+                throw ValidationException::withMessages([
+                    "items.{$itemIndex}.package_details" => ["Opción no permitida en el grupo {$matchedGroup->name}."],
+                ]);
+            }
+
+            $gid = $matchedGroup->id;
+            $groupCounts[$gid] = ($groupCounts[$gid] ?? 0) + $selQty;
+            $extraPrice = (float) $matchedOption->extra_price;
+            $extraSum += round($extraPrice * $selQty, 2);
+
+            $normalized[] = [
+                'group_id' => $matchedGroup->id,
+                'option_id' => $matchedOption->id,
+                'group' => $matchedGroup->name,
+                'label' => $matchedOption->label,
+                'quantity' => $selQty,
+                'extra_price' => $extraPrice,
+            ];
+        }
+
+        foreach ($groups as $group) {
+            $count = $groupCounts[$group->id] ?? 0;
+            if ($count > $group->max_quantity) {
+                throw ValidationException::withMessages([
+                    "items.{$itemIndex}.package_details" => [
+                        "En '{$group->name}' de {$package->name} solo puedes elegir hasta {$group->max_quantity} unidades (elegiste {$count}).",
+                    ],
+                ]);
+            }
+            if ($count < $group->min_quantity) {
+                throw ValidationException::withMessages([
+                    "items.{$itemIndex}.package_details" => [
+                        "Debes elegir al menos {$group->min_quantity} unidad(es) en '{$group->name}' de {$package->name}.",
+                    ],
+                ]);
+            }
+        }
+
+        return [$normalized, round($extraSum, 2)];
     }
 }

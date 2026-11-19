@@ -33,7 +33,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
-          extensions: pdo_sqlite, mbstring, openssl, curl, tokenizer, xml, ctype, json
+          extensions: pdo_sqlite, mbstring, openssl, curl, tokenizer, xml, ctype, json, gd, dom
           tools: composer:v2
 
       - name: Install Production Composer Dependencies

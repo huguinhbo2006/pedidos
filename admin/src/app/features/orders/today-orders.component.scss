@@ -268,17 +268,45 @@
 
   .item-left {
     display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.38rem;
+    align-items: flex-start;
+    gap: 0.42rem;
 
     .qty {
       font-weight: 800;
       color: var(--brand-primary);
     }
 
+    .item-main-col {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+
+    .item-title-row {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.38rem;
+    }
+
     .pname {
       font-weight: 600;
+    }
+
+    .pkg-sublist {
+      list-style: none;
+      margin: 0;
+      padding: 0 0 0 0.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.1rem;
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+
+      span {
+        color: #9a5406;
+        font-weight: 700;
+      }
     }
   }
 
@@ -335,6 +363,12 @@
       color: var(--brand-green);
       font-weight: 600;
     }
+  }
+
+  .foot-btns {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
   }
 
   .delivered-flag-btn {

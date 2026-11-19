@@ -31,6 +31,7 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
   readonly todayDate = signal<string>('');
   readonly confirmingOrder = signal<Order | null>(null);
   readonly deliveringId = signal<number | null>(null);
+  readonly downloadingPdfId = signal<number | null>(null);
 
   searchTerm = '';
   private readonly search$ = new Subject<string>();
@@ -100,6 +101,21 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
       error: () => {
         this.deliveringId.set(null);
         this.toast.error('Ocurrió un error al confirmar la entrega.');
+      },
+    });
+  }
+
+  openPdf(order: Order): void {
+    this.downloadingPdfId.set(order.id);
+    this.api.downloadOrderPdf(order.id).subscribe({
+      next: (blob) => {
+        this.downloadingPdfId.set(null);
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+      },
+      error: () => {
+        this.downloadingPdfId.set(null);
+        this.toast.error('No se pudo generar el PDF del pedido.');
       },
     });
   }

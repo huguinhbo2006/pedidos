@@ -26,12 +26,12 @@ export class CatalogComponent implements OnInit {
   categoryFilter = 'Todas';
 
   formName = '';
-  formCategory = 'Tacos Dorados';
+  formCategory = 'Tacos Normales';
   formDescription = '';
   formPrice: number | null = 0;
   formActive = true;
 
-  readonly presetCategories = ['Tacos Dorados', 'Complementos', 'Extras', 'Bebidas', 'Postres'];
+  readonly presetCategories = ['Tacos Normales', 'Tacos Botaneros', 'Aguas Frescas', 'Desechables y Extras'];
 
   readonly categories = computed(() => {
     const unique = new Set(this.products().map((p) => p.category));
@@ -71,7 +71,7 @@ export class CatalogComponent implements OnInit {
   openCreateModal(): void {
     this.editingProduct.set(null);
     this.formName = '';
-    this.formCategory = 'Tacos Dorados';
+    this.formCategory = 'Tacos Normales';
     this.formDescription = '';
     this.formPrice = null;
     this.formActive = true;

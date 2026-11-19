@@ -21,6 +21,55 @@ export interface Product {
   updated_at?: string;
 }
 
+export interface PackageGroupOption {
+  id?: number;
+  package_group_id?: number;
+  product_id: number | null;
+  label: string;
+  extra_price: number;
+  is_active: boolean;
+  sort_order?: number;
+}
+
+export interface PackageGroup {
+  id?: number;
+  package_id?: number;
+  name: string;
+  min_quantity: number;
+  max_quantity: number;
+  sort_order?: number;
+  options: PackageGroupOption[];
+}
+
+export interface MealPackage {
+  id: number;
+  name: string;
+  description: string | null;
+  base_price: number;
+  is_active: boolean;
+  sort_order?: number;
+  groups: PackageGroup[];
+}
+
+export interface Promotion {
+  id: number;
+  name: string;
+  description: string | null;
+  applies_to_packages: boolean;
+  max_quantity: number;
+  allowed_options: string[];
+  is_active: boolean;
+}
+
+export interface PackageSelectionItem {
+  group_id?: number | null;
+  option_id?: number | null;
+  group: string;
+  label: string;
+  quantity: number;
+  extra_price: number;
+}
+
 export interface CustomerAddress {
   id: number;
   customer_id: number;
@@ -61,11 +110,14 @@ export interface OrderItem {
   id?: number;
   order_id?: number;
   product_id: number | null;
+  package_id?: number | null;
+  item_type?: 'product' | 'package' | 'promo_custom';
   product_name: string;
   unit_price: number;
   quantity: number;
   is_promo: boolean;
   promo_reason: string | null;
+  package_details?: PackageSelectionItem[] | null;
   line_total: number;
 }
 

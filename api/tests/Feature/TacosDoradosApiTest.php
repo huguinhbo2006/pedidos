@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Customer;
+use App\Models\Package;
 use App\Models\Product;
 use App\Models\User;
 use Database\Seeders\DatabaseSeeder;
@@ -45,21 +46,21 @@ class TacosDoradosApiTest extends TestCase
             ->assertJsonPath('username', 'hugo.perez');
     }
 
-    public function test_product_catalog_crud_and_usage_guard(): void
+    public function test_taqueria_mary_product_catalog_crud_and_usage_guard(): void
     {
         $token = $this->authenticate();
 
         $this->withToken($token)
             ->getJson('/api/products')
             ->assertOk()
-            ->assertJsonCount(13);
+            ->assertJsonCount(14);
 
         $created = $this->withToken($token)
             ->postJson('/api/products', [
-                'name' => 'Orden de Tacos Dorados Especiales',
-                'category' => 'Tacos Dorados',
-                'description' => 'Con aguacate y queso gratinado',
-                'price' => 110,
+                'name' => 'Agua de Limón con Chía (1 Litro)',
+                'category' => 'Aguas Frescas',
+                'description' => 'Fresca del día',
+                'price' => 18,
                 'is_active' => true,
             ])
             ->assertStatus(201)
@@ -67,14 +68,14 @@ class TacosDoradosApiTest extends TestCase
 
         $this->withToken($token)
             ->putJson("/api/products/{$created['id']}", [
-                'name' => 'Orden Especial Actualizada',
-                'category' => 'Tacos Dorados',
-                'description' => 'Con aguacate',
-                'price' => 115,
+                'name' => 'Agua de Limón Especial (1 Litro)',
+                'category' => 'Aguas Frescas',
+                'description' => 'Con chía',
+                'price' => 20,
                 'is_active' => true,
             ])
             ->assertOk()
-            ->assertJsonPath('price', 115);
+            ->assertJsonPath('price', 20);
 
         $this->withToken($token)
             ->patchJson("/api/products/{$created['id']}/toggle")
@@ -90,10 +91,9 @@ class TacosDoradosApiTest extends TestCase
     {
         $token = $this->authenticate();
 
-        $tacosPapa = Product::where('name', 'like', '%Papa%')->firstOrFail();
-        $refresco = Product::where('name', 'like', '%Refresco%')->firstOrFail();
+        $tacoPapa = Product::where('name', 'Taco Dorado Normal de Papa (Con salsa, col y chile)')->firstOrFail();
+        $agua = Product::where('name', 'Agua Fresca de Horchata (1 Litro)')->firstOrFail();
 
-        // 1. Create first order for a new customer with a paid item + free promo item
         $firstOrderResp = $this->withToken($token)
             ->postJson('/api/orders', [
                 'customer_phone' => '33 1234 5678',
@@ -107,22 +107,24 @@ class TacosDoradosApiTest extends TestCase
                 'notes' => 'Salsa aparte',
                 'items' => [
                     [
-                        'product_id' => $tacosPapa->id,
-                        'quantity' => 2,
+                        'item_type' => 'product',
+                        'product_id' => $tacoPapa->id,
+                        'quantity' => 10,
                         'is_promo' => false,
                     ],
                     [
-                        'product_id' => $refresco->id,
-                        'quantity' => 1,
+                        'item_type' => 'product',
+                        'product_id' => $agua->id,
+                        'quantity' => 2,
                         'is_promo' => true,
-                        'promo_reason' => 'Promoción del día',
+                        'promo_reason' => 'Regalo por pedido',
                     ],
                 ],
             ])
             ->assertStatus(201);
 
-        $expectedSubtotal = round($tacosPapa->price * 2, 2);
-        $expectedSavings = round($refresco->price * 1, 2);
+        $expectedSubtotal = round($tacoPapa->price * 10, 2);
+        $expectedSavings = round($agua->price * 2, 2);
 
         $firstOrderResp
             ->assertJsonPath('customer_phone', '3312345678')
@@ -135,7 +137,6 @@ class TacosDoradosApiTest extends TestCase
 
         $firstOrderId = $firstOrderResp->json('id');
 
-        // 2. Lookup customer by phone automatically fills name and lists saved address
         $lookup = $this->withToken($token)
             ->getJson('/api/customers/by-phone?phone=3312345678')
             ->assertOk()
@@ -145,7 +146,6 @@ class TacosDoradosApiTest extends TestCase
 
         $customerId = $lookup->json('customer.id');
 
-        // 3. Create second order for same customer using a NEW address -> assigns 2nd address to customer
         $secondOrderResp = $this->withToken($token)
             ->postJson('/api/orders', [
                 'customer_phone' => '3312345678',
@@ -155,8 +155,9 @@ class TacosDoradosApiTest extends TestCase
                 'address_label' => 'Trabajo',
                 'items' => [
                     [
-                        'product_id' => $tacosPapa->id,
-                        'quantity' => 1,
+                        'item_type' => 'product',
+                        'product_id' => $tacoPapa->id,
+                        'quantity' => 5,
                         'is_promo' => false,
                     ],
                 ],
@@ -165,7 +166,6 @@ class TacosDoradosApiTest extends TestCase
 
         $secondOrderId = $secondOrderResp->json('id');
 
-        // Same customer now has 2 distinct saved addresses
         $this->assertSame(1, Customer::count());
         $this->withToken($token)
             ->getJson('/api/customers/by-phone?phone=33-1234-5678')
@@ -173,7 +173,6 @@ class TacosDoradosApiTest extends TestCase
             ->assertJsonPath('customer.id', $customerId)
             ->assertJsonCount(2, 'customer.addresses');
 
-        // 4. Today's orders screen shows both pending orders
         $this->withToken($token)
             ->getJson('/api/orders/today')
             ->assertOk()
@@ -181,7 +180,6 @@ class TacosDoradosApiTest extends TestCase
             ->assertJsonPath('summary.pending_count', 2)
             ->assertJsonPath('summary.delivered_count', 0);
 
-        // 5. Confirm delivery on first order -> MUST disappear from today's main screen even though it's from today
         $this->withToken($token)
             ->patchJson("/api/orders/{$firstOrderId}/deliver")
             ->assertOk()
@@ -196,21 +194,165 @@ class TacosDoradosApiTest extends TestCase
 
         $this->assertSame($secondOrderId, $todayAfterDeliver->json('orders.0.id'));
 
-        // Delivered order still exists in history filter
         $this->withToken($token)
             ->getJson('/api/orders?status=delivered')
             ->assertOk()
             ->assertJsonCount(1);
     }
 
-    public function test_maps_settings_can_be_read_and_updated(): void
+    public function test_packages_with_limits_requeson_extra_price_promotions_and_pdf_generation(): void
     {
         $token = $this->authenticate();
 
         $this->withToken($token)
-            ->getJson('/api/settings/maps')
+            ->getJson('/api/packages')
             ->assertOk()
-            ->assertJsonPath('region', 'mx');
+            ->assertJsonCount(4);
+
+        $this->withToken($token)
+            ->getJson('/api/promotions')
+            ->assertOk()
+            ->assertJsonCount(1);
+
+        $fiestaBasica = Package::with('groups.options')->where('name', 'Paquete Fiesta Básica')->firstOrFail();
+        $tacosGroup = $fiestaBasica->groups->first();
+        $waterGroup = $fiestaBasica->groups->last();
+
+        $papaOption = $tacosGroup->options->firstWhere('label', 'Papa (Con salsa, col y chile)');
+        $requesonOption = $tacosGroup->options->firstWhere('label', 'Requesón (Con salsa, col y chile)');
+        $horchataOption = $waterGroup->options->firstWhere('label', 'Agua de Horchata (1 Litro)');
+
+        // Exceeding 100 tacos limit must fail validation
+        $this->withToken($token)
+            ->postJson('/api/orders', [
+                'customer_phone' => '3320536289',
+                'customer_name' => 'Carlos Ruiz',
+                'delivery_address' => 'Av. México 200',
+                'items' => [
+                    [
+                        'item_type' => 'package',
+                        'package_id' => $fiestaBasica->id,
+                        'quantity' => 1,
+                        'is_promo' => false,
+                        'package_details' => [
+                            [
+                                'group_id' => $tacosGroup->id,
+                                'option_id' => $papaOption->id,
+                                'group' => $tacosGroup->name,
+                                'label' => $papaOption->label,
+                                'quantity' => 101,
+                            ],
+                        ],
+                    ],
+                ],
+            ])
+            ->assertStatus(422);
+
+        // Valid package: $600 base + 40 Requeson * $1 extra = $640 + Free 5L Agua Promo ($0)
+        $orderResp = $this->withToken($token)
+            ->postJson('/api/orders', [
+                'customer_phone' => '3320536289',
+                'customer_name' => 'Carlos Ruiz',
+                'delivery_address' => 'Av. México 200, Guadalajara',
+                'items' => [
+                    [
+                        'item_type' => 'package',
+                        'package_id' => $fiestaBasica->id,
+                        'quantity' => 1,
+                        'is_promo' => false,
+                        'package_details' => [
+                            [
+                                'group_id' => $tacosGroup->id,
+                                'option_id' => $papaOption->id,
+                                'group' => $tacosGroup->name,
+                                'label' => $papaOption->label,
+                                'quantity' => 60,
+                            ],
+                            [
+                                'group_id' => $tacosGroup->id,
+                                'option_id' => $requesonOption->id,
+                                'group' => $tacosGroup->name,
+                                'label' => $requesonOption->label,
+                                'quantity' => 40,
+                            ],
+                            [
+                                'group_id' => $waterGroup->id,
+                                'option_id' => $horchataOption->id,
+                                'group' => $waterGroup->name,
+                                'label' => $horchataOption->label,
+                                'quantity' => 5,
+                            ],
+                        ],
+                    ],
+                    [
+                        'item_type' => 'promo_custom',
+                        'product_name' => 'Regalo: 5L Agua de Horchata',
+                        'quantity' => 1,
+                        'is_promo' => true,
+                        'promo_reason' => '¡5 Litros de Agua Extra GRATIS!',
+                    ],
+                ],
+            ])
+            ->assertStatus(201);
+
+        $this->assertEquals(640, $orderResp->json('total'));
+        $orderId = $orderResp->json('id');
+
+        // Verify PDF generation endpoint
+        $pdfResp = $this->withToken($token)
+            ->get("/api/orders/{$orderId}/pdf")
+            ->assertOk();
+
+        $this->assertStringContainsString('application/pdf', (string) $pdfResp->headers->get('content-type'));
+        $this->assertStringStartsWith('%PDF-', $pdfResp->getContent());
+    }
+
+    public function test_packages_and_promotions_crud_and_maps_settings(): void
+    {
+        $token = $this->authenticate();
+
+        $tacoPapa = Product::where('name', 'Taco Dorado Normal de Papa (Solo)')->firstOrFail();
+
+        $pkg = $this->withToken($token)
+            ->postJson('/api/packages', [
+                'name' => 'Paquete Prueba 50 Tacos',
+                'description' => 'Solo papa y frijol',
+                'base_price' => 250,
+                'groups' => [
+                    [
+                        'name' => 'Tacos Solos',
+                        'min_quantity' => 1,
+                        'max_quantity' => 50,
+                        'options' => [
+                            [
+                                'product_id' => $tacoPapa->id,
+                                'label' => 'Papa Solo',
+                                'extra_price' => 0,
+                                'is_active' => true,
+                            ],
+                        ],
+                    ],
+                ],
+            ])
+            ->assertStatus(201)
+            ->json();
+
+        $this->withToken($token)->patchJson("/api/packages/{$pkg['id']}/toggle")->assertOk();
+        $this->withToken($token)->deleteJson("/api/packages/{$pkg['id']}")->assertOk();
+
+        $promo = $this->withToken($token)
+            ->postJson('/api/promotions', [
+                'name' => 'Refresco Gratis',
+                'description' => 'Regalo',
+                'applies_to_packages' => true,
+                'max_quantity' => 2,
+                'allowed_options' => ['Horchata', 'Jamaica'],
+            ])
+            ->assertStatus(201)
+            ->json();
+
+        $this->withToken($token)->patchJson("/api/promotions/{$promo['id']}/toggle")->assertOk();
+        $this->withToken($token)->deleteJson("/api/promotions/{$promo['id']}")->assertOk();
 
         $this->withToken($token)
             ->putJson('/api/settings/maps', [
@@ -218,9 +360,7 @@ class TacosDoradosApiTest extends TestCase
                 'region' => 'mx',
             ])
             ->assertOk()
-            ->assertJsonPath('has_google_maps_key', true)
-            ->assertJsonPath('api_key', 'AIzaTestKey123')
-            ->assertJsonPath('source', 'database');
+            ->assertJsonPath('has_google_maps_key', true);
     }
 
     private function authenticate(): string

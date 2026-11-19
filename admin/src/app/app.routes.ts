@@ -5,6 +5,7 @@ import { ShellComponent } from './layout/shell.component';
 import { TodayOrdersComponent } from './features/orders/today-orders.component';
 import { NewOrderComponent } from './features/orders/new-order.component';
 import { CatalogComponent } from './features/catalog/catalog.component';
+import { PackagesAdminComponent } from './features/packages/packages-admin.component';
 import { CustomersComponent } from './features/customers/customers.component';
 import { HistoryComponent } from './features/orders/history.component';
 
@@ -23,6 +24,7 @@ export const routes: Routes = [
       { path: 'pedidos', component: TodayOrdersComponent },
       { path: 'pedidos/nuevo', component: NewOrderComponent },
       { path: 'catalogo', component: CatalogComponent },
+      { path: 'paquetes', component: PackagesAdminComponent },
       { path: 'clientes', component: CustomersComponent },
       { path: 'historial', component: HistoryComponent },
     ],

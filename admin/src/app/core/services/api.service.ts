@@ -7,8 +7,11 @@ import {
   Customer,
   CustomerPhoneLookupResponse,
   MapsConfig,
+  MealPackage,
   Order,
+  PackageSelectionItem,
   Product,
+  Promotion,
   TodayOrdersResponse,
 } from '../models/api.models';
 
@@ -24,11 +27,14 @@ export interface CreateOrderPayload {
   address_label?: string | null;
   notes?: string | null;
   items: Array<{
-    product_id: number | null;
+    item_type: 'product' | 'package' | 'promo_custom';
+    product_id?: number | null;
+    package_id?: number | null;
     product_name?: string;
     quantity: number;
     is_promo: boolean;
     promo_reason?: string | null;
+    package_details?: PackageSelectionItem[] | null;
   }>;
 }
 
@@ -60,6 +66,52 @@ export class ApiService {
 
   deleteProduct(id: number): Observable<{ message: string }> {
     return this.http.delete<{ message: string }>(`${this.apiUrl}/products/${id}`);
+  }
+
+  // Packages
+  getPackages(activeOnly = false): Observable<MealPackage[]> {
+    let params = new HttpParams();
+    if (activeOnly) params = params.set('active_only', '1');
+    return this.http.get<MealPackage[]>(`${this.apiUrl}/packages`, { params });
+  }
+
+  createPackage(data: Partial<MealPackage>): Observable<MealPackage> {
+    return this.http.post<MealPackage>(`${this.apiUrl}/packages`, data);
+  }
+
+  updatePackage(id: number, data: Partial<MealPackage>): Observable<MealPackage> {
+    return this.http.put<MealPackage>(`${this.apiUrl}/packages/${id}`, data);
+  }
+
+  togglePackage(id: number): Observable<MealPackage> {
+    return this.http.patch<MealPackage>(`${this.apiUrl}/packages/${id}/toggle`, {});
+  }
+
+  deletePackage(id: number): Observable<{ message: string }> {
+    return this.http.delete<{ message: string }>(`${this.apiUrl}/packages/${id}`);
+  }
+
+  // Promotions
+  getPromotions(activeOnly = false): Observable<Promotion[]> {
+    let params = new HttpParams();
+    if (activeOnly) params = params.set('active_only', '1');
+    return this.http.get<Promotion[]>(`${this.apiUrl}/promotions`, { params });
+  }
+
+  createPromotion(data: Partial<Promotion>): Observable<Promotion> {
+    return this.http.post<Promotion>(`${this.apiUrl}/promotions`, data);
+  }
+
+  updatePromotion(id: number, data: Partial<Promotion>): Observable<Promotion> {
+    return this.http.put<Promotion>(`${this.apiUrl}/promotions/${id}`, data);
+  }
+
+  togglePromotion(id: number): Observable<Promotion> {
+    return this.http.patch<Promotion>(`${this.apiUrl}/promotions/${id}/toggle`, {});
+  }
+
+  deletePromotion(id: number): Observable<{ message: string }> {
+    return this.http.delete<{ message: string }>(`${this.apiUrl}/promotions/${id}`);
   }
 
   // Customers
@@ -112,6 +164,12 @@ export class ApiService {
       `${this.apiUrl}/orders/${orderId}/deliver`,
       {}
     );
+  }
+
+  downloadOrderPdf(orderId: number): Observable<Blob> {
+    return this.http.get(`${this.apiUrl}/orders/${orderId}/pdf`, {
+      responseType: 'blob',
+    });
   }
 
   // Maps Settings & Fallback Search
