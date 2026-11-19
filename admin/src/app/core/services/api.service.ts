@@ -21,6 +21,7 @@ export interface CreateOrderPayload {
   customer_address_id?: number | null;
   delivery_address: string;
   delivery_references?: string | null;
+  delivery_time?: string | null;
   delivery_place_id?: string | null;
   delivery_lat?: number | null;
   delivery_lng?: number | null;

@@ -414,6 +414,7 @@ class TacosDoradosApiTest extends TestCase
                 'customer_phone' => '3311112222',
                 'customer_name' => 'Luis Ramírez',
                 'delivery_address' => 'Calle Juárez 100',
+                'delivery_time' => '14:30',
                 'applied_promotion_ids' => [$discountPromo['id']],
                 'manual_discount_type' => 'fixed',
                 'manual_discount_value' => 50,
@@ -448,6 +449,7 @@ class TacosDoradosApiTest extends TestCase
         $this->assertEquals(30, $order->json('promo_discount_amount'));
         $this->assertEquals(50, $order->json('manual_discount_amount'));
         $this->assertEquals(800, $order->json('total'));
+        $this->assertEquals('14:30', $order->json('delivery_time'));
 
         // Verify PDF renders with promo & manual discounts
         $pdfResp = $this->withToken($token)->get("/api/orders/{$order->json('id')}/pdf")->assertOk();

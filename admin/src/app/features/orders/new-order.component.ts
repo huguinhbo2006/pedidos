@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
@@ -81,7 +81,9 @@ export class NewOrderComponent implements OnInit, OnDestroy {
   newAddressLng: number | null = null;
   savedAddressReferences = '';
 
-  // Order notes
+  // Delivery time & Order notes
+  readonly deliveryTimeMode = signal<'asap' | 'scheduled'>('asap');
+  readonly scheduledDeliveryTime = signal<string>('');
   orderNotes = '';
 
   // Catalog, Packages & Promotions
@@ -114,10 +116,50 @@ export class NewOrderComponent implements OnInit, OnDestroy {
   readonly formError = signal<string | null>(null);
   readonly currentStep = signal<1 | 2 | 3>(1);
   readonly stepError = signal<string | null>(null);
+  readonly pendingPromoConfirmOpen = signal(false);
 
+  private pendingOpenPdf = false;
+  private readonly notifiedPromoIds = new Set<number>();
   private uidCounter = 1;
   private readonly phoneInput$ = new Subject<string>();
   private sub?: Subscription;
+
+  private readonly promoWatcher = effect(() => {
+    const freeQual = this.qualifyingFreePromotions();
+    const discQual = this.qualifyingDiscountPromotions();
+    const currentIds = new Set<number>([
+      ...freeQual.map((p) => p.id),
+      ...discQual.map((q) => q.promo.id),
+    ]);
+
+    for (const prevId of Array.from(this.notifiedPromoIds)) {
+      if (!currentIds.has(prevId)) {
+        this.notifiedPromoIds.delete(prevId);
+      }
+    }
+
+    for (const promo of freeQual) {
+      if (!this.notifiedPromoIds.has(promo.id)) {
+        this.notifiedPromoIds.add(promo.id);
+        if (!this.hasAppliedFreePromo(promo)) {
+          this.toast.success(
+            `🎁 ¡Promo disponible! "${promo.name}" — Ya puedes agregar el regalo gratis.`
+          );
+        }
+      }
+    }
+
+    for (const q of discQual) {
+      if (!this.notifiedPromoIds.has(q.promo.id)) {
+        this.notifiedPromoIds.add(q.promo.id);
+        if (!this.isDiscountPromoSelected(q.promo.id)) {
+          this.toast.success(
+            `💸 ¡Promo desbloqueada! "${q.promo.name}" (−${this.formatCurrency(q.discount)}) — Actívala en el resumen.`
+          );
+        }
+      }
+    }
+  });
 
   readonly categories = computed(() => {
     const set = new Set(this.products().map((p) => p.category));
@@ -137,6 +179,10 @@ export class NewOrderComponent implements OnInit, OnDestroy {
     });
   });
 
+  readonly activePromotions = computed(() =>
+    this.promotions().filter((p) => p.is_active)
+  );
+
   readonly comboPromotions = computed(() =>
     this.promotions().filter((p) => p.is_active && p.type === 'fixed_price_combo')
   );
@@ -145,6 +191,10 @@ export class NewOrderComponent implements OnInit, OnDestroy {
     this.promotions().filter(
       (p) => p.is_active && p.type === 'free_product' && this.evalPromoScope(p).qualifies
     )
+  );
+
+  readonly unclaimedFreePromotions = computed(() =>
+    this.qualifyingFreePromotions().filter((p) => !this.hasAppliedFreePromo(p))
   );
 
   readonly qualifyingDiscountPromotions = computed(() =>
@@ -167,6 +217,18 @@ export class NewOrderComponent implements OnInit, OnDestroy {
     this.qualifyingDiscountPromotions().filter((q) =>
       this.selectedDiscountPromoIds().includes(q.promo.id)
     )
+  );
+
+  readonly unappliedDiscountPromotions = computed(() =>
+    this.qualifyingDiscountPromotions().filter(
+      (q) => !this.isDiscountPromoSelected(q.promo.id)
+    )
+  );
+
+  readonly hasUnappliedQualifyingPromos = computed(
+    () =>
+      this.unclaimedFreePromotions().length > 0 ||
+      this.unappliedDiscountPromotions().length > 0
   );
 
   readonly promoDiscountTotal = computed(() =>
@@ -330,6 +392,44 @@ export class NewOrderComponent implements OnInit, OnDestroy {
     const saved = this.selectedSavedAddress();
     const usingSaved = !this.useNewAddress() && saved !== null;
     return usingSaved ? this.savedAddressReferences.trim() : this.newAddressReferences.trim();
+  }
+
+  get activeDeliveryTimeLabel(): string {
+    if (this.deliveryTimeMode() === 'asap') {
+      return 'Lo antes posible';
+    }
+    const raw = this.scheduledDeliveryTime().trim();
+    return raw ? this.formatDeliveryTime(raw) : 'Hora por definir';
+  }
+
+  setDeliveryTimeMode(mode: 'asap' | 'scheduled'): void {
+    this.deliveryTimeMode.set(mode);
+    if (mode === 'scheduled' && !this.scheduledDeliveryTime().trim()) {
+      this.scheduledDeliveryTime.set(this.computeOffsetHHMM(45));
+    }
+  }
+
+  setQuickDeliveryOffset(minutes: number): void {
+    this.deliveryTimeMode.set('scheduled');
+    this.scheduledDeliveryTime.set(this.computeOffsetHHMM(minutes));
+  }
+
+  private computeOffsetHHMM(minutes: number): string {
+    const dt = new Date(Date.now() + minutes * 60_000);
+    const hh = String(dt.getHours()).padStart(2, '0');
+    const mm = String(dt.getMinutes()).padStart(2, '0');
+    return `${hh}:${mm}`;
+  }
+
+  formatDeliveryTime(val?: string | null): string {
+    if (!val || !val.trim()) return 'Lo antes posible';
+    const match = val.trim().match(/^(\d{2}):(\d{2})$/);
+    if (!match) return val.trim();
+    const h24 = Number(match[1]);
+    const mins = match[2];
+    const suffix = h24 >= 12 ? 'p. m.' : 'a. m.';
+    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+    return `${h12}:${mins} ${suffix}`;
   }
 
   get isStep2Valid(): boolean {
@@ -593,6 +693,47 @@ export class NewOrderComponent implements OnInit, OnDestroy {
     this.toast.success(`Regalo "${promo.name}" agregado ($0.00).`);
   }
 
+  hasAppliedFreePromo(promo: Promotion): boolean {
+    const promoTitle = promo.name.trim().toLowerCase();
+    return this.cart().some(
+      (l) =>
+        l.is_promo &&
+        (l.promotion_id === promo.id || l.promo_reason.trim().toLowerCase() === promoTitle)
+    );
+  }
+
+  isPromoQualified(promo: Promotion): boolean {
+    if (promo.type === 'fixed_price_combo') return false;
+    return this.evalPromoScope(promo).qualifies;
+  }
+
+  promoConditionLabel(promo: Promotion): string {
+    if (promo.type === 'fixed_price_combo') {
+      return `Combo precio fijo (${this.formatCurrency(promo.fixed_price ?? 0)})`;
+    }
+    const minQ = Math.max(1, Number(promo.min_quantity ?? 1));
+    if (promo.target_scope === 'all_packages') {
+      return minQ > 1 ? `Desde ${minQ} paquetes` : 'En compra de cualquier paquete';
+    }
+    if (promo.target_scope === 'packages') {
+      return minQ > 1 ? `${minQ}+ paquetes seleccionados` : 'En paquetes seleccionados';
+    }
+    if (promo.target_scope === 'products') {
+      return minQ > 1 ? `${minQ}+ productos seleccionados` : 'En productos seleccionados';
+    }
+    return `Compra mín. ${this.formatCurrency(promo.min_order_amount ?? 0)}`;
+  }
+
+  quickApplyFullReward(promo: Promotion, choice: PromoRewardChoice): void {
+    this.fillPromoGift(promo, choice.key);
+    this.applyFreeProductPromotion(promo);
+  }
+
+  focusPromotionsStep(): void {
+    this.pendingPromoConfirmOpen.set(false);
+    this.currentStep.set(3);
+  }
+
   isDiscountPromoSelected(promoId: number): boolean {
     return this.selectedDiscountPromoIds().includes(promoId);
   }
@@ -744,7 +885,12 @@ export class NewOrderComponent implements OnInit, OnDestroy {
     this.cart.update((lines) => lines.filter((l) => l.uid !== uid));
   }
 
-  submitOrder(openPdfAfter = false): void {
+  confirmSaveWithoutPendingPromos(): void {
+    this.pendingPromoConfirmOpen.set(false);
+    this.submitOrder(this.pendingOpenPdf, true);
+  }
+
+  submitOrder(openPdfAfter = false, bypassPromoCheck = false): void {
     this.formError.set(null);
 
     const normalizedDigits = this.customerPhone.replace(/\D+/g, '');
@@ -770,9 +916,21 @@ export class NewOrderComponent implements OnInit, OnDestroy {
       return;
     }
 
+    if (this.deliveryTimeMode() === 'scheduled' && !this.scheduledDeliveryTime().trim()) {
+      this.currentStep.set(2);
+      this.formError.set('Selecciona la hora de entrega programada o elige "Lo antes posible".');
+      return;
+    }
+
     if (this.cart().length === 0) {
       this.currentStep.set(3);
       this.formError.set('Agrega al menos un producto o paquete al pedido.');
+      return;
+    }
+
+    if (!bypassPromoCheck && this.hasUnappliedQualifyingPromos()) {
+      this.pendingOpenPdf = openPdfAfter;
+      this.pendingPromoConfirmOpen.set(true);
       return;
     }
 
@@ -787,6 +945,7 @@ export class NewOrderComponent implements OnInit, OnDestroy {
         delivery_references: usingSaved
           ? this.savedAddressReferences.trim() || null
           : this.newAddressReferences.trim() || null,
+        delivery_time: this.activeDeliveryTimeLabel,
         delivery_place_id: usingSaved ? savedAddr.place_id : this.newAddressPlaceId,
         delivery_lat: usingSaved ? savedAddr.latitude : this.newAddressLat,
         delivery_lng: usingSaved ? savedAddr.longitude : this.newAddressLng,

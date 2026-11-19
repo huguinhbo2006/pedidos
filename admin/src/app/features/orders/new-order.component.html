@@ -248,6 +248,42 @@
             </div>
           }
 
+          <div class="delivery-time-box">
+            <div class="dt-head">
+              <label>⏰ Hora de entrega solicitada</label>
+              <span class="dt-current">{{ activeDeliveryTimeLabel }}</span>
+            </div>
+            <div class="dt-controls">
+              <button
+                type="button"
+                class="dt-chip"
+                [class.active]="deliveryTimeMode() === 'asap'"
+                (click)="setDeliveryTimeMode('asap')"
+              >
+                ⚡ Lo antes posible
+              </button>
+              <button
+                type="button"
+                class="dt-chip"
+                [class.active]="deliveryTimeMode() === 'scheduled'"
+                (click)="setDeliveryTimeMode('scheduled')"
+              >
+                🕒 Hora específica
+              </button>
+              <button type="button" class="dt-quick" (click)="setQuickDeliveryOffset(30)">+30 min</button>
+              <button type="button" class="dt-quick" (click)="setQuickDeliveryOffset(45)">+45 min</button>
+              <button type="button" class="dt-quick" (click)="setQuickDeliveryOffset(60)">+1 hora</button>
+              @if (deliveryTimeMode() === 'scheduled') {
+                <input
+                  type="time"
+                  class="dt-time-input"
+                  [ngModel]="scheduledDeliveryTime()"
+                  (ngModelChange)="scheduledDeliveryTime.set($event)"
+                />
+              }
+            </div>
+          </div>
+
           <div class="wizard-nav">
             <button type="button" class="btn btn-outline" (click)="prevStep()">
               ← Anterior: Cliente
@@ -279,6 +315,30 @@
               🎁 {{ showCustomPromoBox ? 'Ocultar regalo libre' : '+ Regalo personalizado' }}
             </button>
           </div>
+
+          @if (activePromotions().length > 0) {
+            <div class="active-promos-strip">
+              <span class="strip-title">📢 Promociones activas hoy ({{ activePromotions().length }}):</span>
+              <div class="strip-pills">
+                @for (p of activePromotions(); track p.id) {
+                  @if (p.type === 'fixed_price_combo') {
+                    <button type="button" class="promo-hint-chip combo" (click)="catalogMode.set('combos')">
+                      📦 {{ p.name }} — {{ formatCurrency(p.fixed_price ?? 0) }} (Ver combo)
+                    </button>
+                  } @else {
+                    <span class="promo-hint-chip" [class.qualified]="isPromoQualified(p)">
+                      {{ p.type === 'free_product' ? '🎁' : '💸' }}
+                      <strong>{{ p.name }}</strong>
+                      <small>({{ promoConditionLabel(p) }})</small>
+                      @if (isPromoQualified(p)) {
+                        <em>✓ Califica</em>
+                      }
+                    </span>
+                  }
+                }
+              </div>
+            </div>
+          }
 
           <div class="mode-switcher">
             <button
@@ -597,6 +657,14 @@
             </div>
             <span class="meta-edit">Editar</span>
           </button>
+
+          <button type="button" class="meta-row" (click)="goToStep(2)">
+            <span class="meta-ico">⏰</span>
+            <div class="meta-txt">
+              <strong>Entrega: {{ activeDeliveryTimeLabel }}</strong>
+            </div>
+            <span class="meta-edit">Cambiar</span>
+          </button>
         </div>
 
         @if (cart().length === 0) {
@@ -693,6 +761,45 @@
             placeholder="Salsa aparte, paga con billete de $1,000..."
           ></textarea>
         </div>
+
+        @if (unclaimedFreePromotions().length > 0 || qualifyingDiscountPromotions().length > 0) {
+          <div class="summary-promos-box">
+            @for (promo of unclaimedFreePromotions(); track promo.id) {
+              <div class="summary-promo-alert">
+                <div class="spa-head">
+                  <strong>🎁 ¡Califica para: {{ promo.name }}!</strong>
+                  <small>Regalo gratis pendiente ({{ promo.max_quantity }} max.)</small>
+                </div>
+                <div class="spa-actions">
+                  @for (ch of getPromoRewardChoices(promo); track ch.key) {
+                    <button
+                      type="button"
+                      class="btn btn-gold btn-sm"
+                      (click)="quickApplyFullReward(promo, ch)"
+                    >
+                      + {{ promo.max_quantity }}x {{ ch.label }}
+                    </button>
+                  }
+                  <button type="button" class="btn btn-outline btn-sm" (click)="focusPromotionsStep()">
+                    Combinar sabores
+                  </button>
+                </div>
+              </div>
+            }
+
+            @for (item of qualifyingDiscountPromotions(); track item.promo.id) {
+              <label class="summary-discount-toggle" [class.selected]="isDiscountPromoSelected(item.promo.id)">
+                <input
+                  type="checkbox"
+                  [checked]="isDiscountPromoSelected(item.promo.id)"
+                  (change)="toggleDiscountPromo(item.promo.id)"
+                />
+                <span>💸 {{ item.promo.name }}</span>
+                <strong>− {{ formatCurrency(item.discount) }}</strong>
+              </label>
+            }
+          </div>
+        }
 
         <div class="manual-discount-box">
           <div class="md-head">
@@ -812,5 +919,63 @@
       (confirmed)="onPackageConfigured($event)"
       (cancelled)="buildingPackage.set(null)"
     />
+  }
+
+  @if (pendingPromoConfirmOpen()) {
+    <div class="modal-backdrop" (click)="pendingPromoConfirmOpen.set(false)">
+      <div class="modal-panel promo-warn-modal" (click)="$event.stopPropagation()">
+        <div class="promo-warn-head">
+          <span class="pw-ico">🎁</span>
+          <div>
+            <h3>¡Este pedido tiene promociones disponibles!</h3>
+            <p>Califica para las siguientes promociones que aún no están aplicadas:</p>
+          </div>
+        </div>
+
+        <div class="promo-warn-body">
+          @for (promo of unclaimedFreePromotions(); track promo.id) {
+            <div class="pw-card">
+              <strong>🎁 {{ promo.name }}</strong>
+              <div class="spa-actions">
+                @for (ch of getPromoRewardChoices(promo); track ch.key) {
+                  <button
+                    type="button"
+                    class="btn btn-gold btn-sm"
+                    (click)="quickApplyFullReward(promo, ch); !hasUnappliedQualifyingPromos() && pendingPromoConfirmOpen.set(false)"
+                  >
+                    🎁 Regalar {{ promo.max_quantity }}x {{ ch.label }}
+                  </button>
+                }
+              </div>
+            </div>
+          }
+
+          @for (item of unappliedDiscountPromotions(); track item.promo.id) {
+            <div class="pw-card discount">
+              <div>
+                <strong>💸 {{ item.promo.name }}</strong>
+                <small>Descuento de {{ formatCurrency(item.discount) }}</small>
+              </div>
+              <button
+                type="button"
+                class="btn btn-success btn-sm"
+                (click)="toggleDiscountPromo(item.promo.id); !hasUnappliedQualifyingPromos() && pendingPromoConfirmOpen.set(false)"
+              >
+                ✓ Aplicar (−{{ formatCurrency(item.discount) }})
+              </button>
+            </div>
+          }
+        </div>
+
+        <div class="promo-warn-actions">
+          <button type="button" class="btn btn-outline" (click)="focusPromotionsStep()">
+            ← Ir a Paso 3 (Elegir promos)
+          </button>
+          <button type="button" class="btn btn-primary" (click)="confirmSaveWithoutPendingPromos()">
+            Guardar pedido de todos modos
+          </button>
+        </div>
+      </div>
+    </div>
   }
 </section>

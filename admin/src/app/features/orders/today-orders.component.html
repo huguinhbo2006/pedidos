@@ -91,6 +91,10 @@
             <div class="customer-phone">📞 {{ order.customer_phone }}</div>
           </div>
 
+          <div class="delivery-time-pill" [class.scheduled]="!!order.delivery_time && order.delivery_time !== 'Lo antes posible'">
+            ⏰ <strong>Hora de entrega:</strong> {{ formatDeliveryTime(order.delivery_time) }}
+          </div>
+
           <div class="address-box">
             <div class="address-line">
               <span class="pin">📍</span>

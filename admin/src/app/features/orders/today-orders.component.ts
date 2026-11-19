@@ -127,6 +127,17 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
     return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.delivery_address)}`;
   }
 
+  formatDeliveryTime(val?: string | null): string {
+    if (!val || !val.trim()) return 'Lo antes posible';
+    const match = val.trim().match(/^(\d{2}):(\d{2})$/);
+    if (!match) return val.trim();
+    const h24 = Number(match[1]);
+    const mins = match[2];
+    const suffix = h24 >= 12 ? 'p. m.' : 'a. m.';
+    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+    return `${h12}:${mins} ${suffix}`;
+  }
+
   formatCurrency(amount: number): string {
     return new Intl.NumberFormat('es-MX', {
       style: 'currency',

@@ -69,6 +69,7 @@ import { Order } from '../../core/models/api.models';
               <div class="hist-mid">
                 <div><strong>Cliente:</strong> {{ order.customer_name }} ({{ order.customer_phone }})</div>
                 <div><strong>Domicilio:</strong> {{ order.delivery_address }}</div>
+                <div><strong>Hora de entrega:</strong> {{ formatDeliveryTime(order.delivery_time) }}</div>
                 <div class="items-inline">
                   @for (item of order.items; track item.id ?? $index) {
                     <span class="item-chip" [class.promo]="item.is_promo">
@@ -249,6 +250,17 @@ export class HistoryComponent implements OnInit {
         this.toast.error('No se pudo generar el PDF.');
       },
     });
+  }
+
+  formatDeliveryTime(val?: string | null): string {
+    if (!val || !val.trim()) return 'Lo antes posible';
+    const match = val.trim().match(/^(\d{2}):(\d{2})$/);
+    if (!match) return val.trim();
+    const h24 = Number(match[1]);
+    const mins = match[2];
+    const suffix = h24 >= 12 ? 'p. m.' : 'a. m.';
+    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+    return `${h12}:${mins} ${suffix}`;
   }
 
   formatCurrency(amount: number): string {

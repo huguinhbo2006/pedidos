@@ -386,4 +386,189 @@ a {
       }
     }
   }
+
+  .delivery-time-box {
+    background: var(--bg-canvas);
+    border: 1.5px solid var(--border-light);
+    border-radius: var(--radius-md);
+    padding: 0.85rem 0.95rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+
+    .dt-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.5rem;
+      label { font-weight: 800; font-size: 0.9rem; color: var(--text-primary); }
+      .dt-current { font-size: 0.84rem; font-weight: 800; color: var(--brand-primary); }
+    }
+
+    .dt-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .dt-chip, .dt-quick {
+      border: 1px solid var(--border-strong);
+      background: #fff;
+      border-radius: 999px;
+      padding: 0.35rem 0.72rem;
+      font-size: 0.8rem;
+      font-weight: 700;
+      cursor: pointer;
+
+      &.active {
+        background: var(--brand-primary);
+        border-color: var(--brand-primary);
+        color: #fff;
+      }
+    }
+
+    .dt-quick {
+      background: #fffbeb;
+      border-color: #f3d093;
+      color: #92400e;
+      font-size: 0.76rem;
+    }
+
+    .dt-time-input {
+      padding: 0.32rem 0.55rem;
+      border: 1.5px solid var(--brand-primary);
+      border-radius: var(--radius-sm);
+      font-size: 0.88rem;
+      font-weight: 700;
+      background: #fff;
+    }
+  }
+
+  .active-promos-strip {
+    background: #fffbeb;
+    border: 1px solid #f3d093;
+    border-radius: var(--radius-md);
+    padding: 0.65rem 0.85rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+
+    .strip-title { font-size: 0.8rem; font-weight: 800; color: #92400e; }
+    .strip-pills { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+
+    .promo-hint-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      background: #fff;
+      border: 1px solid #e9c47c;
+      border-radius: 999px;
+      padding: 0.24rem 0.65rem;
+      font-size: 0.76rem;
+      color: #78350f;
+
+      small { color: #9a5406; }
+      em { font-style: normal; background: var(--brand-green); color: #fff; border-radius: 999px; padding: 0.08rem 0.4rem; font-weight: 800; font-size: 0.68rem; }
+
+      &.qualified { border-color: var(--brand-green); background: #f0fdf4; color: #166534; }
+      &.combo { cursor: pointer; background: #fff7ed; border-color: #fb923c; color: #9a3412; font-weight: 700; }
+    }
+  }
+
+  .summary-promos-box {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+  }
+
+  .summary-promo-alert {
+    background: #fef3c7;
+    border: 1.5px solid #f59e0b;
+    border-radius: var(--radius-sm);
+    padding: 0.55rem 0.65rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+
+    .spa-head {
+      display: flex;
+      flex-direction: column;
+      strong { font-size: 0.83rem; color: #92400e; }
+      small { font-size: 0.74rem; color: #b45309; }
+    }
+  }
+
+  .spa-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .summary-discount-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.45rem 0.6rem;
+    background: #f0fdf4;
+    border: 1.5px solid #86efac;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 0.8rem;
+
+    &.selected { background: #dcfce7; border-color: var(--brand-green); }
+    input { width: 16px; height: 16px; accent-color: var(--brand-green); }
+    span { flex: 1; font-weight: 700; color: #166534; }
+    strong { color: var(--brand-green); }
+  }
+
+  .promo-warn-modal { max-width: 520px; }
+
+  .promo-warn-head {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem 1.25rem;
+    background: #fffbeb;
+    border-bottom: 1px solid #fde68a;
+
+    .pw-ico { font-size: 1.75rem; }
+    h3 { margin: 0; font-size: 1.04rem; color: #92400e; }
+    p { margin: 0.15rem 0 0; font-size: 0.82rem; color: #78350f; }
+  }
+
+  .promo-warn-body {
+    padding: 1rem 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+
+    .pw-card {
+      background: var(--bg-canvas);
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-sm);
+      padding: 0.7rem 0.8rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+
+      &.discount {
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+        div { display: flex; flex-direction: column; }
+        small { color: var(--brand-green); font-weight: 700; font-size: 0.78rem; }
+      }
+    }
+  }
+
+  .promo-warn-actions {
+    padding: 0.85rem 1.25rem;
+    background: var(--bg-canvas);
+    border-top: 1px solid var(--border-light);
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
 }

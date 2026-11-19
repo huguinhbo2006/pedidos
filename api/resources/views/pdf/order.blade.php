@@ -208,6 +208,10 @@
     @if($order->delivery_references)
       <div style="margin-top: 3px;"><strong>Referencias:</strong> {{ $order->delivery_references }}</div>
     @endif
+    <div style="margin-top: 4px;">
+      <strong>Hora de entrega:</strong>
+      <span style="color: #c84b24; font-weight: bold;">{{ $order->delivery_time ?: 'Lo antes posible' }}</span>
+    </div>
   </div>
 
   @php

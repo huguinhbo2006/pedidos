@@ -113,6 +113,7 @@ class OrderController extends Controller
             'customer_address_id' => ['nullable', 'integer'],
             'delivery_address' => ['required', 'string', 'min:4', 'max:500'],
             'delivery_references' => ['nullable', 'string', 'max:300'],
+            'delivery_time' => ['nullable', 'string', 'max:60'],
             'delivery_place_id' => ['nullable', 'string', 'max:255'],
             'delivery_lat' => ['nullable', 'numeric', 'between:-90,90'],
             'delivery_lng' => ['nullable', 'numeric', 'between:-180,180'],
@@ -389,6 +390,9 @@ class OrderController extends Controller
                 'customer_phone' => $normalizedPhone,
                 'delivery_address' => $customerAddress->address,
                 'delivery_references' => $references,
+                'delivery_time' => isset($data['delivery_time']) && trim((string) $data['delivery_time']) !== ''
+                    ? trim((string) $data['delivery_time'])
+                    : null,
                 'delivery_place_id' => $placeId,
                 'delivery_lat' => $lat,
                 'delivery_lng' => $lng,

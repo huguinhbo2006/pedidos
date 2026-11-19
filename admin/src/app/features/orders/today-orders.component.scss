@@ -201,6 +201,24 @@
   }
 }
 
+.delivery-time-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-light);
+  color: var(--text-secondary);
+
+  &.scheduled {
+    background: #fff3db;
+    border-color: #f59e0b;
+    color: #92400e;
+  }
+}
+
 .address-box {
   display: flex;
   flex-direction: column;

@@ -16,6 +16,7 @@ class Order extends Model
         'customer_phone',
         'delivery_address',
         'delivery_references',
+        'delivery_time',
         'delivery_place_id',
         'delivery_lat',
         'delivery_lng',
