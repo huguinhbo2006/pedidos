@@ -36,3 +36,6 @@ php artisan serve --host=127.0.0.1 --port=8000
 - `POST /api/orders` — Alta de pedido (crea/actualiza cliente, asigna domicilio, calcula total y promociones gratis)
 - `PATCH /api/orders/{id}/deliver` — Confirma entrega del pedido
 - `GET|PUT /api/settings/maps` — Configuración de Google Maps API Key
+
+## Despliegue en producción (Hostinger)
+- Al hacer `git push` a `main` con cambios en `api/`, el workflow `.github/workflows/deploy-api.yml` despliega en `/home/u111559603/domains/taqueriamary.com/public_html/api-pedidos` (`https://api-pedidos.taqueriamary.com`).

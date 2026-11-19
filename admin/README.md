@@ -1,6 +1,6 @@
 # Taquería Pedidos — Frontend (Angular 20)
 
-Aplicación web SPA en **Angular 20** para la gestión de pedidos de tacos dorados conectada a la API Laravel (`TAQUERIA-PEDIDOS-API`).
+Aplicación web SPA en **Angular 20** para la gestión de pedidos de tacos dorados conectada a la API Laravel (`api/`).
 
 ## Requisitos
 - Node.js `>= 20`
@@ -13,13 +13,14 @@ npm start
 ```
 Abre **http://localhost:4200** (el archivo `proxy.conf.json` redirige `/api` hacia `http://127.0.0.1:8000`).
 
-## Compilación para producción (Hostinger)
-1. Ajusta `apiUrl` en `src/environments/environment.ts` con la URL pública de tu API (por ejemplo `https://api.tudominio.com/api`).
-2. Ejecuta:
+## Compilación y despliegue en producción (Hostinger)
+1. `src/environments/environment.ts` apunta a `https://api-pedidos.taqueriamary.com/api`.
+2. Al hacer `git push` a `main` con cambios en `admin/`, el workflow `.github/workflows/deploy-admin.yml` compila y publica automáticamente en `/home/u111559603/domains/taqueriamary.com/public_html/pedidos` (`https://pedidos.taqueriamary.com`).
+3. Para compilar manualmente:
    ```bash
    npm run build
    ```
-3. Sube el contenido de `dist/tacos-dorados-web/browser/` a la carpeta pública (`public_html`) en Hostinger (incluye `.htaccess` para rutas SPA de Angular).
+   *(El resultado en `dist/tacos-dorados-web/browser/` incluye `.htaccess` para rutas SPA de Angular).*
 
 ## Credenciales iniciales
 - **Usuario:** `hugo.perez`
