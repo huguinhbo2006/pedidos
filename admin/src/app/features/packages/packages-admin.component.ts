@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
@@ -207,20 +207,41 @@ import { MealPackage, PackageGroup, Product, Promotion } from '../../core/models
 
                     <div class="opts-editor">
                       <div class="oe-head">
-                        <small>Opciones / sabores permitidos en este grupo:</small>
-                        <button type="button" class="btn btn-outline btn-sm" (click)="addOption(gi)">+ Opción</button>
+                        <small>Productos permitidos en este grupo (selecciona del catálogo):</small>
+                        <button type="button" class="btn btn-outline btn-sm" (click)="addOption(gi)">+ Agregar producto</button>
+                      </div>
+
+                      <div class="opt-col-labels">
+                        <span>Producto</span>
+                        <span class="extra-lbl">Extra ($)</span>
+                        <span></span>
                       </div>
 
                       @for (opt of group.options; track $index; let oi = $index) {
                         <div class="opt-edit-row">
-                          <input type="text" [(ngModel)]="opt.label" placeholder="Ej. Papa o Requesón" />
+                          <select
+                            [ngModel]="opt.product_id"
+                            (ngModelChange)="onOptionProductChange(gi, oi, $event)"
+                            class="product-select"
+                          >
+                            <option [ngValue]="null" disabled>-- Selecciona un producto del catálogo --</option>
+                            @for (catGroup of groupedProducts(); track catGroup.category) {
+                              <optgroup [label]="catGroup.category">
+                                @for (p of catGroup.items; track p.id) {
+                                  <option [ngValue]="p.id">
+                                    {{ p.name }} ({{ formatCurrency(p.price) }})
+                                  </option>
+                                }
+                              </optgroup>
+                            }
+                          </select>
                           <input
                             type="number"
                             step="0.5"
                             min="0"
                             [(ngModel)]="opt.extra_price"
-                            title="Cargo extra por unidad"
-                            placeholder="Extra $"
+                            title="Incremento extra por unidad"
+                            placeholder="0"
                             class="extra-inp"
                           />
                           <button type="button" class="btn btn-danger-ghost btn-sm" (click)="removeOption(gi, oi)">✕</button>
@@ -362,10 +383,23 @@ import { MealPackage, PackageGroup, Product, Promotion } from '../../core/models
     }
     .opts-editor { display: flex; flex-direction: column; gap: 0.4rem; }
     .oe-head { display: flex; justify-content: space-between; align-items: center; }
+    .opt-col-labels {
+      display: flex; gap: 0.45rem; align-items: center;
+      font-size: 0.72rem; font-weight: 700; color: var(--text-muted); padding: 0 0.1rem;
+      span:first-child { flex: 1; }
+      .extra-lbl { width: 95px; }
+      span:last-child { width: 32px; }
+    }
     .opt-edit-row {
       display: flex; gap: 0.45rem; align-items: center;
-      input { flex: 1; padding: 0.42rem 0.6rem; border: 1px solid var(--border-strong); border-radius: 6px; }
-      .extra-inp { max-width: 95px; }
+      .product-select {
+        flex: 1; min-width: 0; padding: 0.44rem 0.6rem;
+        border: 1px solid var(--border-strong); border-radius: 6px; background: #fff; font-size: 0.86rem;
+      }
+      .extra-inp {
+        width: 95px; padding: 0.42rem 0.6rem;
+        border: 1px solid var(--border-strong); border-radius: 6px;
+      }
     }
     .checkbox-row { display: flex; align-items: center; gap: 0.5rem; font-weight: 600; font-size: 0.88rem; }
     .modal-actions {
@@ -381,8 +415,19 @@ export class PackagesAdminComponent implements OnInit {
   readonly activeTab = signal<'packages' | 'promotions'>('packages');
   readonly packages = signal<MealPackage[]>([]);
   readonly promotions = signal<Promotion[]>([]);
+  readonly products = signal<Product[]>([]);
   readonly loading = signal(true);
   readonly saving = signal(false);
+
+  readonly groupedProducts = computed(() => {
+    const map = new Map<string, Product[]>();
+    for (const p of this.products()) {
+      const list = map.get(p.category) ?? [];
+      list.push(p);
+      map.set(p.category, list);
+    }
+    return Array.from(map.entries()).map(([category, items]) => ({ category, items }));
+  });
 
   readonly showPkgModal = signal(false);
   readonly editingPkg = signal<MealPackage | null>(null);
@@ -414,6 +459,9 @@ export class PackagesAdminComponent implements OnInit {
     this.api.getPromotions().subscribe({
       next: (list) => this.promotions.set(list),
     });
+    this.api.getProducts().subscribe({
+      next: (list) => this.products.set(list),
+    });
   }
 
   openNewPackage(): void {
@@ -428,8 +476,7 @@ export class PackagesAdminComponent implements OnInit {
           min_quantity: 1,
           max_quantity: 100,
           options: [
-            { product_id: null, label: 'Papa (Con salsa, col y chile)', extra_price: 0, is_active: true },
-            { product_id: null, label: 'Frijol (Con salsa, col y chile)', extra_price: 0, is_active: true },
+            { product_id: null, label: '', extra_price: 0, is_active: true },
           ],
         },
       ],
@@ -463,7 +510,7 @@ export class PackagesAdminComponent implements OnInit {
       name: 'Nuevo grupo',
       min_quantity: 0,
       max_quantity: 10,
-      options: [{ product_id: null, label: 'Opción 1', extra_price: 0, is_active: true }],
+      options: [{ product_id: null, label: '', extra_price: 0, is_active: true }],
     });
   }
 
@@ -480,6 +527,14 @@ export class PackagesAdminComponent implements OnInit {
     });
   }
 
+  onOptionProductChange(groupIndex: number, optIndex: number, productId: number | null): void {
+    const id = productId ? Number(productId) : null;
+    const prod = id ? this.products().find((p) => p.id === id) : undefined;
+    const opt = this.pkgForm.groups[groupIndex].options[optIndex];
+    opt.product_id = prod ? prod.id : id;
+    opt.label = prod ? prod.name : '';
+  }
+
   removeOption(groupIndex: number, optIndex: number): void {
     this.pkgForm.groups[groupIndex].options.splice(optIndex, 1);
   }
@@ -488,6 +543,19 @@ export class PackagesAdminComponent implements OnInit {
     if (!this.pkgForm.name.trim() || this.pkgForm.groups.length === 0) {
       this.toast.error('Completa el nombre y al menos un grupo.');
       return;
+    }
+
+    for (const grp of this.pkgForm.groups) {
+      if (!grp.name.trim() || grp.options.length === 0) {
+        this.toast.error('Cada grupo debe tener un nombre y al menos un producto.');
+        return;
+      }
+      for (const opt of grp.options) {
+        if (!opt.product_id || !opt.label.trim()) {
+          this.toast.error(`Selecciona un producto del catálogo en "${grp.name}".`);
+          return;
+        }
+      }
     }
 
     this.saving.set(true);
