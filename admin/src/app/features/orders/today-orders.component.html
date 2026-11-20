@@ -114,10 +114,20 @@
           </div>
 
           <div class="customer-box">
-            <div class="customer-name">👤 {{ order.customer_name }}</div>
-            <a [href]="getTelUrl(order.customer_phone)" class="customer-phone customer-phone-link" title="Clic para marcar al celular">
-              📞 {{ order.customer_phone }}
-            </a>
+            <div class="customer-info-group">
+              <div class="customer-name">👤 {{ order.customer_name }}</div>
+              <a [href]="getTelUrl(order.customer_phone)" class="customer-phone customer-phone-link" title="Clic para marcar al celular">
+                📞 {{ order.customer_phone }}
+              </a>
+            </div>
+            <button
+              type="button"
+              class="btn-inline-edit-customer"
+              (click)="openEditCustomerModal(order)"
+              title="Modificar nombre o celular del cliente"
+            >
+              ✏️ Editar
+            </button>
           </div>
 
           <div class="delivery-time-pill scheduled">
@@ -512,6 +522,97 @@
             [disabled]="isSendingWhatsApp() || !whatsappMessageText().trim() || (whatsappRecipientType() === 'employee' && !whatsappSelectedEmployeeId())"
           >
             {{ isSendingWhatsApp() ? '⏳ Enviando...' : (whatsappSendPdf() ? '🚀 Enviar con Ticket PDF' : '🚀 Enviar Mensaje') }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- MODAL: EDICIÓN RÁPIDA DE NOMBRE O CELULAR DEL CLIENTE -->
+  @if (editingCustomerOrder(); as order) {
+    <div class="modal-backdrop" (click)="closeEditCustomerModal()">
+      <div class="modal-panel modern-modal" (click)="$event.stopPropagation()">
+        <div class="modal-head">
+          <div class="head-title">
+            <span class="icon">✏️</span>
+            <div>
+              <h3>Editar Datos del Cliente</h3>
+              <p>Pedido <strong>#{{ order.order_number }}</strong></p>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="btn-close"
+            (click)="closeEditCustomerModal()"
+            [disabled]="isSavingCustomer()"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div class="modal-body">
+          @if (editCustomerError()) {
+            <div class="alert alert-error" style="margin-bottom: 0.9rem;">
+              ❌ {{ editCustomerError() }}
+            </div>
+          }
+
+          <div class="modern-field">
+            <label for="quickCustName" class="modern-label">
+              <span class="label-icon">👤</span> Nombre completo <span class="required-star">*</span>
+            </label>
+            <input
+              id="quickCustName"
+              type="text"
+              class="modern-input"
+              [ngModel]="editCustomerName()"
+              (ngModelChange)="editCustomerName.set($event)"
+              (keyup.enter)="canSaveCustomerEdit() && saveOrderCustomer()"
+              placeholder="Ej. María López"
+              [disabled]="isSavingCustomer()"
+              autofocus
+            />
+          </div>
+
+          <div class="modern-field">
+            <label for="quickCustPhone" class="modern-label">
+              <span class="label-icon">📱</span> Número de Celular <span class="required-star">*</span>
+            </label>
+            <div class="phone-wrap">
+              <span class="phone-prefix-tag">🇲🇽 +52</span>
+              <input
+                id="quickCustPhone"
+                type="tel"
+                class="modern-input with-prefix"
+                [ngModel]="editCustomerPhone()"
+                (ngModelChange)="editCustomerPhone.set($event)"
+                (keyup.enter)="canSaveCustomerEdit() && saveOrderCustomer()"
+                placeholder="10 dígitos (ej. 33 1234 5678)"
+                [disabled]="isSavingCustomer()"
+              />
+            </div>
+            <small class="help-text">
+              Se actualizará la ficha del cliente y sus pedidos vinculados (incluyendo este pedido). Si deseas cambiar el pedido a otro cliente ya existente, usa «✏️ Modificar» en el pedido.
+            </small>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button
+            type="button"
+            class="btn btn-outline"
+            (click)="closeEditCustomerModal()"
+            [disabled]="isSavingCustomer()"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            class="btn btn-primary"
+            (click)="saveOrderCustomer()"
+            [disabled]="isSavingCustomer() || !canSaveCustomerEdit()"
+          >
+            {{ isSavingCustomer() ? 'Guardando...' : '💾 Guardar Cambios' }}
           </button>
         </div>
       </div>

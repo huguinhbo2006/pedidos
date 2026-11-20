@@ -141,7 +141,10 @@ export class ApiService {
     return this.http.get<Customer>(`${this.apiUrl}/customers/${id}`);
   }
 
-  updateCustomer(id: number, data: { name: string; notes?: string | null }): Observable<Customer> {
+  updateCustomer(
+    id: number,
+    data: { name: string; phone?: string; notes?: string | null; sync_orders?: boolean }
+  ): Observable<Customer> {
     return this.http.put<Customer>(`${this.apiUrl}/customers/${id}`, data);
   }
 

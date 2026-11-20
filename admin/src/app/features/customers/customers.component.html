@@ -1,0 +1,277 @@
+<section class="customers-page">
+  <div class="page-header">
+    <div>
+      <h1>Clientes y Domicilios</h1>
+      <p class="subtitle">
+        Consulta clientes registrados, actualiza su nombre o número de celular y administra sus domicilios.
+      </p>
+    </div>
+    <div class="header-meta">
+      <span class="badge badge-muted">👥 {{ customers().length }} cliente(s)</span>
+    </div>
+  </div>
+
+  <div class="card toolbar">
+    <div class="search-wrap">
+      <span class="search-icon">🔍</span>
+      <input
+        type="text"
+        [ngModel]="searchTerm"
+        (ngModelChange)="onSearch($event)"
+        placeholder="Buscar cliente por nombre o celular..."
+        class="search-input"
+      />
+      @if (searchTerm) {
+        <button type="button" class="clear-btn" (click)="onSearch('')">Limpiar</button>
+      }
+    </div>
+  </div>
+
+  @if (loading()) {
+    <div class="card empty-box">Cargando clientes...</div>
+  } @else if (customers().length === 0) {
+    <div class="card empty-box">
+      @if (searchTerm.trim()) {
+        No se encontraron clientes que coincidan con "{{ searchTerm }}".
+      } @else {
+        Aún no hay clientes registrados. Se crearán en automático cuando registres el primer pedido.
+      }
+    </div>
+  } @else {
+    <div class="customers-grid">
+      @for (customer of customers(); track customer.id) {
+        <article class="customer-card card">
+          <div class="cust-head">
+            <div class="cust-identity">
+              <h3>👤 {{ customer.name }}</h3>
+              <a
+                [href]="getTelUrl(customer.phone)"
+                class="phone-link"
+                title="Llamar a {{ customer.phone }}"
+              >
+                📞 {{ customer.phone }}
+              </a>
+            </div>
+
+            <div class="cust-head-actions">
+              <span class="badge badge-muted">{{ customer.orders_count ?? 0 }} pedido(s)</span>
+              <button
+                type="button"
+                class="btn btn-outline btn-sm"
+                (click)="openEditModal(customer)"
+                title="Modificar nombre, celular o notas del cliente"
+              >
+                ✏️ Editar
+              </button>
+            </div>
+          </div>
+
+          @if (customer.notes) {
+            <div class="customer-notes">
+              📝 {{ customer.notes }}
+            </div>
+          }
+
+          <div class="addresses-section">
+            <div class="sec-title">
+              Domicilios asignados ({{ customer.addresses?.length ?? 0 }})
+            </div>
+            @if (!(customer.addresses?.length)) {
+              <small class="muted">Sin domicilios guardados.</small>
+            } @else {
+              <ul class="addr-list">
+                @for (addr of customer.addresses!; track addr.id) {
+                  <li>
+                    <div class="addr-info">
+                      <span class="lbl">{{ addr.label || 'Domicilio' }}</span>
+                      <span class="txt">{{ addr.address }}</span>
+                      @if (addr.references) {
+                        <small>Ref: {{ addr.references }}</small>
+                      }
+                    </div>
+                    <button
+                      type="button"
+                      class="del-addr-btn"
+                      title="Eliminar domicilio"
+                      (click)="openDeleteAddressModal(customer, addr)"
+                    >
+                      🗑️
+                    </button>
+                  </li>
+                }
+              </ul>
+            }
+          </div>
+        </article>
+      }
+    </div>
+  }
+
+  <!-- MODAL: EDITAR CLIENTE -->
+  @if (editingCustomer(); as customer) {
+    <div class="modal-backdrop" (click)="closeEditModal()">
+      <div class="modal-panel modern-modal" (click)="$event.stopPropagation()">
+        <div class="modal-head">
+          <div class="head-title">
+            <span class="icon">✏️</span>
+            <div>
+              <h3>Editar Datos del Cliente</h3>
+              <p>Modifica el nombre, celular o notas de {{ customer.name }}</p>
+            </div>
+          </div>
+          <button type="button" class="btn-close" (click)="closeEditModal()" [disabled]="isSaving()">✕</button>
+        </div>
+
+        <div class="modal-body">
+          @if (editError()) {
+            <div class="alert alert-error" style="margin-bottom: 0.9rem;">
+              ❌ {{ editError() }}
+            </div>
+          }
+
+          <div class="modern-field">
+            <label for="custEditName" class="modern-label">
+              <span class="label-icon">👤</span> Nombre completo <span class="required-star">*</span>
+            </label>
+            <input
+              id="custEditName"
+              type="text"
+              class="modern-input"
+              [ngModel]="formName()"
+              (ngModelChange)="formName.set($event)"
+              (keyup.enter)="canSaveEdit() && saveCustomer()"
+              placeholder="Ej. María López"
+              [disabled]="isSaving()"
+              autofocus
+            />
+          </div>
+
+          <div class="modern-field">
+            <label for="custEditPhone" class="modern-label">
+              <span class="label-icon">📱</span> Número de Celular <span class="required-star">*</span>
+            </label>
+            <div class="phone-wrap">
+              <span class="phone-prefix-tag">🇲🇽 +52</span>
+              <input
+                id="custEditPhone"
+                type="tel"
+                class="modern-input with-prefix"
+                [ngModel]="formPhone()"
+                (ngModelChange)="formPhone.set($event)"
+                (keyup.enter)="canSaveEdit() && saveCustomer()"
+                placeholder="10 dígitos (ej. 33 1234 5678)"
+                [disabled]="isSaving()"
+              />
+            </div>
+            <small class="help-text">
+              Mínimo 7 dígitos. Se normalizará automáticamente y debe ser único por cliente.
+            </small>
+          </div>
+
+          <div class="modern-field">
+            <label for="custEditNotes" class="modern-label">
+              <span class="label-icon">📝</span> Notas del cliente (opcional)
+            </label>
+            <textarea
+              id="custEditNotes"
+              rows="2"
+              class="modern-textarea"
+              [ngModel]="formNotes()"
+              (ngModelChange)="formNotes.set($event)"
+              placeholder="Ej. Cliente frecuente, salsa aparte, tocar timbre..."
+              [disabled]="isSaving()"
+            ></textarea>
+          </div>
+
+          @if ((customer.orders_count ?? 0) > 0) {
+            <div class="modern-checkbox-row">
+              <label class="custom-checkbox">
+                <input
+                  type="checkbox"
+                  [ngModel]="formSyncOrders()"
+                  (ngModelChange)="formSyncOrders.set($event)"
+                  [disabled]="isSaving()"
+                />
+                <span class="checkbox-text">
+                  <strong>Actualizar también en sus {{ customer.orders_count }} pedido(s) registrado(s)</strong>
+                  <small>Refleja el nuevo nombre y celular en pedidos pendientes, historial, PDFs y WhatsApp.</small>
+                </span>
+              </label>
+            </div>
+          }
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" (click)="closeEditModal()" [disabled]="isSaving()">
+            Cancelar
+          </button>
+          <button
+            type="button"
+            class="btn btn-primary"
+            (click)="saveCustomer()"
+            [disabled]="isSaving() || !canSaveEdit()"
+          >
+            {{ isSaving() ? 'Guardando...' : '💾 Guardar Cambios' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- MODAL: CONFIRMAR ELIMINAR DOMICILIO -->
+  @if (deletingAddressTarget(); as target) {
+    <div class="modal-backdrop" (click)="closeDeleteAddressModal()">
+      <div class="modal-panel modern-modal" (click)="$event.stopPropagation()">
+        <div class="modal-head delete-head">
+          <div class="head-title">
+            <span class="delete-icon">🗑️</span>
+            <div>
+              <h3>Eliminar Domicilio</h3>
+              <p>Cliente: <strong>{{ target.customer.name }}</strong></p>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="btn-close"
+            (click)="closeDeleteAddressModal()"
+            [disabled]="isDeletingAddress()"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div class="modal-body">
+          <div class="summary-pill">
+            <div><strong>Etiqueta:</strong> {{ target.address.label || 'Domicilio' }}</div>
+            <div><strong>Dirección:</strong> {{ target.address.address }}</div>
+            @if (target.address.references) {
+              <div><strong>Referencias:</strong> {{ target.address.references }}</div>
+            }
+          </div>
+          <p class="confirm-msg">
+            ¿Confirmas que deseas eliminar este domicilio guardado de la ficha del cliente?
+          </p>
+        </div>
+
+        <div class="modal-actions">
+          <button
+            type="button"
+            class="btn btn-outline"
+            (click)="closeDeleteAddressModal()"
+            [disabled]="isDeletingAddress()"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            class="btn btn-danger"
+            (click)="confirmDeleteAddress()"
+            [disabled]="isDeletingAddress()"
+          >
+            {{ isDeletingAddress() ? 'Eliminando...' : '🗑️ Sí, eliminar' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+</section>

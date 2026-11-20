@@ -51,6 +51,19 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
   readonly whatsappSendPdf = signal<boolean>(false);
   readonly whatsappStatus = signal<{ type: 'success' | 'error'; message: string } | null>(null);
 
+  // Quick Edit Customer Modal State
+  readonly editingCustomerOrder = signal<Order | null>(null);
+  readonly editCustomerName = signal('');
+  readonly editCustomerPhone = signal('');
+  readonly isSavingCustomer = signal(false);
+  readonly editCustomerError = signal<string | null>(null);
+
+  readonly canSaveCustomerEdit = computed(() => {
+    const nameValid = this.editCustomerName().trim().length >= 2;
+    const phoneDigits = this.editCustomerPhone().replace(/\D+/g, '');
+    return nameValid && phoneDigits.length >= 7;
+  });
+
   readonly displayedOrders = computed(() =>
     this.activeTab() === 'today' ? this.orders() : this.upcomingOrders()
   );
@@ -442,5 +455,74 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
     const intl = clean.length === 10 ? `521${clean}` : clean;
     const text = encodeURIComponent(this.whatsappMessageText());
     window.open(`https://wa.me/${intl}?text=${text}`, '_blank');
+  }
+
+  // --- Quick Edit Customer from Order Card ---
+  openEditCustomerModal(order: Order): void {
+    this.editingCustomerOrder.set(order);
+    this.editCustomerName.set(order.customer_name);
+    this.editCustomerPhone.set(order.customer_phone);
+    this.editCustomerError.set(null);
+  }
+
+  closeEditCustomerModal(): void {
+    if (this.isSavingCustomer()) return;
+    this.editingCustomerOrder.set(null);
+    this.editCustomerError.set(null);
+  }
+
+  saveOrderCustomer(): void {
+    const order = this.editingCustomerOrder();
+    if (!order || this.isSavingCustomer()) return;
+
+    const name = this.editCustomerName().trim();
+    const phone = this.editCustomerPhone().trim();
+    const digits = phone.replace(/\D+/g, '');
+
+    if (name.length < 2) {
+      this.editCustomerError.set('El nombre del cliente debe tener al menos 2 caracteres.');
+      return;
+    }
+
+    if (digits.length < 7) {
+      this.editCustomerError.set('Ingresa un número de celular válido (al menos 7 dígitos).');
+      return;
+    }
+
+    this.isSavingCustomer.set(true);
+    this.editCustomerError.set(null);
+
+    this.api
+      .updateCustomer(order.customer_id, {
+        name,
+        phone,
+        sync_orders: true,
+      })
+      .subscribe({
+        next: (updated) => {
+          this.isSavingCustomer.set(false);
+          this.editingCustomerOrder.set(null);
+
+          const patchOrder = (o: Order): Order =>
+            o.customer_id === updated.id
+              ? { ...o, customer_name: updated.name, customer_phone: updated.phone }
+              : o;
+
+          this.orders.update((list) => list.map(patchOrder));
+          this.upcomingOrders.update((list) => list.map(patchOrder));
+          this.toast.success(`Cliente actualizado: ${updated.name} (${updated.phone}).`);
+        },
+        error: (err) => {
+          this.isSavingCustomer.set(false);
+          const firstValidation = err?.error?.errors
+            ? Object.values(err.error.errors).flat()[0]
+            : null;
+          this.editCustomerError.set(
+            (firstValidation as string) ||
+              err?.error?.message ||
+              'No se pudieron guardar los cambios del cliente.'
+          );
+        },
+      });
   }
 }

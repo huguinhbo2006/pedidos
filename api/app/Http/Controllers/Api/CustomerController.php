@@ -7,6 +7,8 @@ use App\Models\Customer;
 use App\Models\CustomerAddress;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class CustomerController extends Controller
 {
@@ -78,16 +80,61 @@ class CustomerController extends Controller
     public function update(Request $request, Customer $customer): JsonResponse
     {
         $data = $request->validate([
-            'name' => ['required', 'string', 'max:150'],
+            'name' => ['required', 'string', 'min:2', 'max:150'],
+            'phone' => ['sometimes', 'required', 'string', 'min:7', 'max:30'],
             'notes' => ['nullable', 'string', 'max:500'],
+            'sync_orders' => ['nullable', 'boolean'],
         ]);
 
-        $customer->update([
-            'name' => trim($data['name']),
-            'notes' => isset($data['notes']) ? trim($data['notes']) : null,
-        ]);
+        $normalizedPhone = $customer->phone;
+        if (array_key_exists('phone', $data)) {
+            $rawPhone = (string) $data['phone'];
+            $digits = preg_replace('/\D+/', '', $rawPhone) ?? '';
+            if (strlen($digits) < 7) {
+                throw ValidationException::withMessages([
+                    'phone' => ['Ingresa un número de celular válido (al menos 7 dígitos).'],
+                ]);
+            }
 
-        return response()->json($customer->load('addresses'));
+            $normalizedPhone = Customer::normalizePhone($rawPhone);
+
+            $duplicate = Customer::where('phone', $normalizedPhone)
+                ->where('id', '!=', $customer->id)
+                ->first();
+
+            if ($duplicate) {
+                throw ValidationException::withMessages([
+                    'phone' => ["Ya existe otro cliente ({$duplicate->name}) registrado con este número de celular."],
+                ]);
+            }
+        }
+
+        $cleanName = trim($data['name']);
+        $cleanNotes = array_key_exists('notes', $data)
+            ? (trim((string) ($data['notes'] ?? '')) ?: null)
+            : $customer->notes;
+        $syncOrders = array_key_exists('sync_orders', $data)
+            ? (bool) $data['sync_orders']
+            : true;
+
+        DB::transaction(function () use ($customer, $cleanName, $normalizedPhone, $cleanNotes, $syncOrders) {
+            $customer->update([
+                'name' => $cleanName,
+                'phone' => $normalizedPhone,
+                'notes' => $cleanNotes,
+            ]);
+
+            if ($syncOrders) {
+                $customer->orders()->update([
+                    'customer_name' => $cleanName,
+                    'customer_phone' => $normalizedPhone,
+                ]);
+            }
+        });
+
+        return response()->json(
+            $customer->fresh()->load('addresses')->loadCount(['orders', 'addresses'])
+        );
     }
 
     public function destroyAddress(Customer $customer, CustomerAddress $address): JsonResponse

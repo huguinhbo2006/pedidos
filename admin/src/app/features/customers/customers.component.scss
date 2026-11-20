@@ -1,0 +1,226 @@
+.customers-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+
+  h1 {
+    margin: 0;
+    font-size: 1.55rem;
+    font-weight: 800;
+  }
+
+  .subtitle {
+    margin: 0.2rem 0 0;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+  }
+}
+
+.toolbar {
+  padding: 0.75rem 1rem;
+}
+
+.search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+
+  .search-icon {
+    position: absolute;
+    left: 0.85rem;
+    font-size: 0.95rem;
+    pointer-events: none;
+  }
+
+  .search-input {
+    width: 100%;
+    padding: 0.58rem 4.8rem 0.58rem 2.35rem;
+    border: 1.5px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    font-size: 0.92rem;
+    background: #fff;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+
+    &:focus {
+      outline: none;
+      border-color: var(--brand-primary);
+      box-shadow: 0 0 0 3px rgba(200, 75, 36, 0.14);
+    }
+  }
+
+  .clear-btn {
+    position: absolute;
+    right: 0.5rem;
+    border: none;
+    background: var(--bg-subtle);
+    padding: 0.28rem 0.6rem;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--border-light);
+    }
+  }
+}
+
+.empty-box {
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.customers-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.customer-card {
+  padding: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  border-top: 3px solid var(--brand-primary);
+}
+
+.cust-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+
+  .cust-identity {
+    min-width: 0;
+    flex: 1 1 160px;
+
+    h3 {
+      margin: 0;
+      font-size: 1.04rem;
+      font-weight: 800;
+      word-break: break-word;
+    }
+
+    .phone-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-size: 0.86rem;
+      color: #0369a1;
+      font-weight: 700;
+      margin-top: 0.2rem;
+
+      &:hover {
+        text-decoration: underline;
+        color: #0284c7;
+      }
+    }
+  }
+
+  .cust-head-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-shrink: 0;
+  }
+}
+
+.customer-notes {
+  background: var(--bg-gold-soft);
+  border: 1px solid #f3d093;
+  color: #78350f;
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.7rem;
+  font-size: 0.83rem;
+}
+
+.addresses-section {
+  border-top: 1px solid var(--border-light);
+  padding-top: 0.7rem;
+
+  .sec-title {
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 0.45rem;
+  }
+
+  .muted {
+    color: var(--text-muted);
+    font-size: 0.84rem;
+  }
+}
+
+.addr-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+
+  li {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.5rem 0.65rem;
+    background: var(--bg-canvas);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-light);
+  }
+
+  .addr-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.12rem;
+
+    .lbl {
+      font-size: 0.74rem;
+      font-weight: 800;
+      color: var(--brand-primary);
+    }
+
+    .txt {
+      font-size: 0.84rem;
+      font-weight: 600;
+    }
+
+    small {
+      font-size: 0.76rem;
+      color: var(--text-muted);
+    }
+  }
+
+  .del-addr-btn {
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    opacity: 0.7;
+    padding: 0.2rem;
+    border-radius: 6px;
+
+    &:hover {
+      opacity: 1;
+      background: #fef2f2;
+    }
+  }
+}
+
+.confirm-msg {
+  margin: 0.85rem 0 0;
+  font-size: 0.92rem;
+  color: var(--text-primary);
+}

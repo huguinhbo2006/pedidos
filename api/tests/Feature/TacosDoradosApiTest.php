@@ -792,6 +792,121 @@ class TacosDoradosApiTest extends TestCase
         $this->assertDatabaseMissing('employees', ['id' => $employeeId]);
     }
 
+    public function test_customer_name_and_phone_update_with_sync_and_uniqueness_validation(): void
+    {
+        $token = $this->authenticate();
+        $tacoPapa = Product::where('name', 'Taco Dorado Normal de Papa (Con salsa, col y chile)')->firstOrFail();
+
+        // Create two distinct customers via orders
+        $order1 = $this->withToken($token)
+            ->postJson('/api/orders', [
+                'customer_phone' => '3311112222',
+                'customer_name' => 'Laura Méndez',
+                'delivery_address' => 'Av. México 100',
+                'items' => [
+                    [
+                        'item_type' => 'product',
+                        'product_id' => $tacoPapa->id,
+                        'quantity' => 5,
+                        'is_promo' => false,
+                    ],
+                ],
+            ])
+            ->assertStatus(201)
+            ->json();
+
+        $order2 = $this->withToken($token)
+            ->postJson('/api/orders', [
+                'customer_phone' => '3344445555',
+                'customer_name' => 'Pedro Sánchez',
+                'delivery_address' => 'Av. Patria 200',
+                'items' => [
+                    [
+                        'item_type' => 'product',
+                        'product_id' => $tacoPapa->id,
+                        'quantity' => 3,
+                        'is_promo' => false,
+                    ],
+                ],
+            ])
+            ->assertStatus(201)
+            ->json();
+
+        $customer1Id = $order1['customer_id'];
+
+        // 1. Reject duplicate phone belonging to another customer
+        $this->withToken($token)
+            ->putJson("/api/customers/{$customer1Id}", [
+                'name' => 'Laura Méndez Actualizada',
+                'phone' => '33 4444 5555',
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['phone']);
+
+        // 2. Reject invalid phone with fewer than 7 digits
+        $this->withToken($token)
+            ->putJson("/api/customers/{$customer1Id}", [
+                'name' => 'Laura Méndez',
+                'phone' => 'abc-123',
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['phone']);
+
+        // 3. Update name, normalized phone & notes with sync_orders = true
+        $updatedResp = $this->withToken($token)
+            ->putJson("/api/customers/{$customer1Id}", [
+                'name' => 'Laura Méndez García',
+                'phone' => '33-8877-6655',
+                'notes' => 'Salsa verde extra',
+                'sync_orders' => true,
+            ])
+            ->assertOk();
+
+        $updatedResp
+            ->assertJsonPath('name', 'Laura Méndez García')
+            ->assertJsonPath('phone', '3388776655')
+            ->assertJsonPath('notes', 'Salsa verde extra')
+            ->assertJsonPath('orders_count', 1);
+
+        $this->assertDatabaseHas('customers', [
+            'id' => $customer1Id,
+            'name' => 'Laura Méndez García',
+            'phone' => '3388776655',
+            'notes' => 'Salsa verde extra',
+        ]);
+
+        $this->assertDatabaseHas('orders', [
+            'id' => $order1['id'],
+            'customer_name' => 'Laura Méndez García',
+            'customer_phone' => '3388776655',
+        ]);
+
+        // 4. Update with sync_orders = false preserves existing orders snapshot
+        $this->withToken($token)
+            ->putJson("/api/customers/{$customer1Id}", [
+                'name' => 'Laura M. Solo Ficha',
+                'phone' => '3399001122',
+                'notes' => null,
+                'sync_orders' => false,
+            ])
+            ->assertOk()
+            ->assertJsonPath('name', 'Laura M. Solo Ficha')
+            ->assertJsonPath('phone', '3399001122');
+
+        $this->assertDatabaseHas('orders', [
+            'id' => $order1['id'],
+            'customer_name' => 'Laura Méndez García',
+            'customer_phone' => '3388776655',
+        ]);
+
+        // Ensure second customer was untouched
+        $this->assertDatabaseHas('customers', [
+            'id' => $order2['customer_id'],
+            'name' => 'Pedro Sánchez',
+            'phone' => '3344445555',
+        ]);
+    }
+
     private function authenticate(): string
     {
         return $this->postJson('/api/login', [

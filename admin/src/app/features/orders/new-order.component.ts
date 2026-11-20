@@ -454,6 +454,10 @@ export class NewOrderComponent implements OnInit, OnDestroy {
         this.editingOrderNumber.set(order.order_number);
         this.customerPhone = order.customer_phone;
         this.customerName = order.customer_name;
+        if (order.customer) {
+          this.foundCustomer.set(order.customer);
+          this.lastMatchedPhone = order.customer.phone;
+        }
         if (order.delivery_date) {
           this.deliveryDate.set(order.delivery_date.substring(0, 10));
         }
@@ -464,7 +468,11 @@ export class NewOrderComponent implements OnInit, OnDestroy {
           this.deliveryTimeMode.set('asap');
         }
 
-        this.useNewAddress.set(false);
+        const hasSavedAddr = Boolean(
+          order.customer_address_id &&
+            order.customer?.addresses?.some((a) => a.id === order.customer_address_id)
+        );
+        this.useNewAddress.set(!hasSavedAddr);
         this.newAddressText = order.delivery_address;
         this.newAddressReferences = order.delivery_references || '';
         this.newAddressPlaceId = order.delivery_place_id;

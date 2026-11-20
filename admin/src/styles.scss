@@ -323,6 +323,238 @@ a {
   }
 }
 
+.modal-panel.modern-modal {
+  .modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.15rem 1.35rem;
+    border-bottom: 1px solid var(--border-light);
+
+    .head-title {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+
+      .icon {
+        font-size: 1.45rem;
+        line-height: 1;
+      }
+
+      h3 {
+        margin: 0;
+        font-size: 1.12rem;
+        font-weight: 800;
+      }
+
+      p {
+        margin: 0.15rem 0 0;
+        font-size: 0.82rem;
+        color: var(--text-secondary);
+      }
+    }
+
+    .btn-close {
+      border: none;
+      background: transparent;
+      font-size: 1.15rem;
+      cursor: pointer;
+      color: var(--text-muted);
+      padding: 0.25rem 0.5rem;
+      border-radius: 6px;
+
+      &:hover:not(:disabled) {
+        background: var(--bg-subtle);
+        color: var(--text-primary);
+      }
+    }
+
+    &.delete-head {
+      background: #fef2f2;
+
+      .delete-icon {
+        font-size: 1.45rem;
+      }
+    }
+  }
+
+  .modal-body {
+    padding: 1.25rem 1.35rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.92rem;
+  }
+
+  .modal-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.65rem;
+    padding: 1rem 1.35rem;
+    border-top: 1px solid var(--border-light);
+    background: var(--bg-canvas);
+  }
+}
+
+.modern-field {
+  margin-bottom: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+
+  .modern-label {
+    display: flex;
+    align-items: center;
+    gap: 0.38rem;
+    font-size: 0.86rem;
+    font-weight: 700;
+    color: #1e293b;
+
+    .label-icon {
+      font-size: 1rem;
+      line-height: 1;
+    }
+
+    .required-star {
+      color: var(--brand-primary);
+      font-weight: 800;
+    }
+  }
+
+  .modern-input,
+  .modern-select {
+    width: 100%;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 10px;
+    padding: 0.65rem 0.85rem;
+    font-size: 0.92rem;
+    background: #ffffff;
+    color: #0f172a;
+    transition: all 0.18s ease;
+
+    &:hover:not(:disabled) {
+      border-color: #94a3b8;
+    }
+
+    &:focus {
+      border-color: var(--brand-primary);
+      box-shadow: 0 0 0 3px rgba(200, 75, 36, 0.14);
+      outline: none;
+      background: #ffffff;
+    }
+  }
+
+  .phone-wrap {
+    display: flex;
+    align-items: center;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #ffffff;
+    transition: all 0.18s ease;
+
+    &:hover {
+      border-color: #94a3b8;
+    }
+
+    &:focus-within {
+      border-color: var(--brand-primary);
+      box-shadow: 0 0 0 3px rgba(200, 75, 36, 0.14);
+    }
+
+    .phone-prefix-tag {
+      background: #f8fafc;
+      border-right: 1.5px solid #e2e8f0;
+      padding: 0.65rem 0.75rem;
+      font-size: 0.84rem;
+      font-weight: 700;
+      color: #475569;
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      user-select: none;
+      white-space: nowrap;
+    }
+
+    input.with-prefix {
+      border: none !important;
+      box-shadow: none !important;
+      border-radius: 0;
+      padding: 0.65rem 0.85rem;
+      width: 100%;
+      outline: none;
+    }
+  }
+
+  .modern-textarea {
+    width: 100%;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 10px;
+    padding: 0.7rem 0.85rem;
+    font-size: 0.9rem;
+    line-height: 1.45;
+    font-family: inherit;
+    background: #ffffff;
+    color: #0f172a;
+    transition: all 0.18s ease;
+    resize: vertical;
+
+    &:hover:not(:disabled) {
+      border-color: #94a3b8;
+    }
+
+    &:focus {
+      border-color: var(--brand-primary);
+      box-shadow: 0 0 0 3px rgba(200, 75, 36, 0.14);
+      outline: none;
+    }
+  }
+
+  .help-text {
+    display: block;
+    font-size: 0.76rem;
+    color: var(--text-muted);
+    margin-top: 0.1rem;
+  }
+}
+
+.modern-checkbox-row {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0.75rem 0.95rem;
+  margin-top: 0.25rem;
+
+  .custom-checkbox {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    cursor: pointer;
+    font-size: 0.88rem;
+
+    input[type='checkbox'] {
+      width: 18px;
+      height: 18px;
+      margin-top: 2px;
+      accent-color: var(--brand-primary);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .checkbox-text {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+
+      small {
+        font-size: 0.78rem;
+        color: var(--text-secondary);
+      }
+    }
+  }
+}
+
 .new-order-page {
   .discount-offer {
     cursor: pointer;

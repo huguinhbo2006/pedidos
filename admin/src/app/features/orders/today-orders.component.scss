@@ -215,11 +215,20 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 0.4rem;
+  flex-wrap: nowrap;
+  gap: 0.5rem;
   padding: 0.55rem 0.75rem;
   background: var(--bg-subtle);
   border-radius: var(--radius-sm);
+
+  .customer-info-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem 0.75rem;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
 
   .customer-name {
     font-weight: 700;
@@ -240,6 +249,25 @@
         text-decoration: underline;
         color: #0284c7;
       }
+    }
+  }
+
+  .btn-inline-edit-customer {
+    flex-shrink: 0;
+    border: 1px solid var(--border-strong);
+    background: #fff;
+    color: var(--text-secondary);
+    border-radius: 6px;
+    padding: 0.22rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+
+    &:hover {
+      border-color: var(--brand-primary);
+      color: var(--brand-primary);
+      background: var(--bg-accent-soft);
     }
   }
 }
