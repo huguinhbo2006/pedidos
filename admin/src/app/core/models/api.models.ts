@@ -248,3 +248,47 @@ export interface Employee {
   created_at?: string;
   updated_at?: string;
 }
+
+export type WeekDayKey =
+  | 'monday'
+  | 'tuesday'
+  | 'wednesday'
+  | 'thursday'
+  | 'friday'
+  | 'saturday'
+  | 'sunday';
+
+export interface Tortero {
+  id: number;
+  name: string;
+  phone: string;
+  delivery_days: WeekDayKey[];
+  notes?: string | null;
+  is_active: boolean;
+  last_sent_for_date?: string | null;
+  last_sent_at?: string | null;
+  skipped_for_date?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface TorteroSendResultItem {
+  id: number;
+  name: string;
+  phone: string;
+  success: boolean;
+  error: string | null;
+}
+
+export interface TorteroBulkSendResponse {
+  success: boolean;
+  message: string;
+  error?: string | null;
+  sent_count: number;
+  failed_count: number;
+  target_date: string;
+  device: string;
+  message_used: string;
+  results: TorteroSendResultItem[];
+  updated_torteros?: Tortero[];
+}

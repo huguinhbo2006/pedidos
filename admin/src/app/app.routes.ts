@@ -8,6 +8,7 @@ import { CatalogComponent } from './features/catalog/catalog.component';
 import { PackagesAdminComponent } from './features/packages/packages-admin.component';
 import { CustomersComponent } from './features/customers/customers.component';
 import { EmployeesComponent } from './features/employees/employees.component';
+import { TorterosComponent } from './features/torteros/torteros.component';
 import { WhatsappDevicesComponent } from './features/whatsapp/whatsapp-devices.component';
 import { HistoryComponent } from './features/orders/history.component';
 
@@ -29,6 +30,7 @@ export const routes: Routes = [
       { path: 'catalogo', component: CatalogComponent },
       { path: 'paquetes', component: PackagesAdminComponent },
       { path: 'clientes', component: CustomersComponent },
+      { path: 'torteros', component: TorterosComponent },
       { path: 'empleados', component: EmployeesComponent },
       { path: 'whatsapp', component: WhatsappDevicesComponent },
       { path: 'historial', component: HistoryComponent },

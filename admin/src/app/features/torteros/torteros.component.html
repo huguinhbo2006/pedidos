@@ -1,0 +1,678 @@
+<section class="torteros-page">
+  <div class="page-header">
+    <div class="header-titles">
+      <h1>🥖 Torteros — Pedidos Frecuentes</h1>
+      <p class="subtitle">
+        Administra tu catálogo de torteros, elige qué días pide cada uno y envía recordatorios por WhatsApp en un clic.
+      </p>
+    </div>
+
+    <div class="header-actions">
+      <button type="button" class="btn btn-primary" (click)="openCreateModal()">
+        ➕ Nuevo Tortero
+      </button>
+    </div>
+  </div>
+
+  <!-- TABS PRINCIPALES -->
+  <div class="tabs-bar">
+    <button
+      type="button"
+      class="tab-btn"
+      [class.active]="activeTab() === 'messages'"
+      (click)="activeTab.set('messages')"
+    >
+      💬 Mensajes de Torteros
+      <span class="tab-pill">{{ selectedCountForTarget() }} listos</span>
+    </button>
+
+    <button
+      type="button"
+      class="tab-btn"
+      [class.active]="activeTab() === 'catalog'"
+      (click)="activeTab.set('catalog')"
+    >
+      📋 Catálogo de Torteros
+      <span class="tab-pill">{{ torteros().length }}</span>
+    </button>
+  </div>
+
+  @if (loading()) {
+    <div class="card empty-state">
+      <div class="empty-emoji">⏳</div>
+      <p>Cargando torteros y conexión de WhatsApp...</p>
+    </div>
+  } @else if (activeTab() === 'messages') {
+    <!-- TAB 1: MENSAJES DE TORTEROS (LISTA DEL DÍA POSTERIOR Y ENVÍO EN 1 CLIC) -->
+    <div class="dispatch-banner card">
+      <div class="banner-left">
+        <div class="banner-day-badge">
+          📅 Hoy es <strong>{{ todayDayLabel() }}</strong> → Preguntando para:
+          <strong class="target-highlight">{{ targetDayFullLabel() }}</strong>
+        </div>
+        <small class="banner-sub">
+          Se cargaron automáticamente los torteros programados para <strong>{{ targetDayName() }}</strong>.
+          Puedes desmarcar, marcar «Ya avisó» o agregar otros solo para este envío.
+        </small>
+      </div>
+
+      <div class="banner-date-controls">
+        <button
+          type="button"
+          class="date-chip"
+          [class.active]="targetDate() === tomorrowIso"
+          (click)="changeTargetDate(tomorrowIso)"
+        >
+          ⏩ Mañana ({{ tomorrowDayName }})
+        </button>
+        <button
+          type="button"
+          class="date-chip"
+          [class.active]="targetDate() === dayAfterTomorrowIso"
+          (click)="changeTargetDate(dayAfterTomorrowIso)"
+        >
+          📆 {{ dayAfterTomorrowName }}
+        </button>
+        <input
+          type="date"
+          class="date-picker-input"
+          [ngModel]="targetDate()"
+          (ngModelChange)="changeTargetDate($event)"
+          title="Elegir otra fecha objetivo"
+        />
+      </div>
+    </div>
+
+    @if (torteros().length === 0) {
+      <div class="card empty-state">
+        <div class="empty-emoji">🥖</div>
+        <h3>Aún no tienes torteros registrados</h3>
+        <p>Agrega tus clientes torteros con su celular y los días que normalmente piden tacos para enviarles mensaje en un clic.</p>
+        <button type="button" class="btn btn-primary" (click)="openCreateModal()">
+          ➕ Registrar Primer Tortero
+        </button>
+      </div>
+    } @else {
+      <div class="dispatch-layout">
+        <!-- COLUMNA IZQUIERDA: LISTA EDITABLE DEL DÍA POSTERIOR -->
+        <div class="dispatch-list-panel card">
+          <div class="panel-head">
+            <div>
+              <h2>Lista para {{ targetDayName() }} ({{ scheduledList().length }})</h2>
+              <small>
+                <strong>{{ selectedCountForTarget() }}</strong> seleccionado(s) para enviar mensaje
+              </small>
+            </div>
+
+            <div class="selection-actions">
+              <button
+                type="button"
+                class="btn btn-outline btn-sm"
+                (click)="selectAllPendingForTarget()"
+                [disabled]="scheduledList().length === 0"
+              >
+                ✓ Seleccionar pendientes
+              </button>
+              <button
+                type="button"
+                class="btn btn-outline btn-sm"
+                (click)="clearSelection()"
+                [disabled]="selectedCountForTarget() === 0"
+              >
+                Limpiar
+              </button>
+            </div>
+          </div>
+
+          @if (scheduledList().length === 0) {
+            <div class="inner-empty">
+              <p>No hay torteros programados para el día <strong>{{ targetDayName() }}</strong>.</p>
+              <small>Puedes agregar uno manualmente abajo para este envío, o asignarle el día {{ targetDayName() }} en el catálogo.</small>
+            </div>
+          } @else {
+            <div class="recipient-list">
+              @for (item of scheduledList(); track item.tortero.id) {
+                <div
+                  class="recipient-row"
+                  [class.selected]="item.selected"
+                  [class.already-sent]="item.sentToday"
+                  [class.skipped]="item.skippedToday"
+                >
+                  <label class="row-check-area">
+                    <input
+                      type="checkbox"
+                      [checked]="item.selected"
+                      (change)="toggleSelection(item.tortero.id)"
+                      [disabled]="isSendingBulk()"
+                    />
+
+                    <div class="row-main">
+                      <div class="row-title-line">
+                        <strong>{{ item.tortero.name }}</strong>
+                        @if (item.isExtra) {
+                          <span class="mini-badge extra">➕ Agregado hoy</span>
+                        }
+                        @if (item.sentToday) {
+                          <span class="mini-badge sent">✅ Enviado {{ formatSentTime(item.tortero.last_sent_at) }}</span>
+                        } @else if (item.skippedToday) {
+                          <span class="mini-badge skipped">⏭️ Ya avisó / Omitido</span>
+                        }
+                        @if (item.lastResult; as res) {
+                          <span class="mini-badge" [class.sent]="res.success" [class.failed]="!res.success">
+                            {{ res.success ? '✓ Entregado' : '✕ ' + (res.error || 'Error') }}
+                          </span>
+                        }
+                      </div>
+
+                      <div class="row-meta-line">
+                        <span class="phone-txt">📞 {{ formatPhone(item.tortero.phone) }}</span>
+                        <span class="days-inline">
+                          @for (d of item.tortero.delivery_days; track d) {
+                            <span class="day-mini" [class.match]="d === targetDayKey()">{{ dayShortLabel(d) }}</span>
+                          }
+                        </span>
+                      </div>
+
+                      @if (item.tortero.notes) {
+                        <small class="row-notes">📝 {{ item.tortero.notes }}</small>
+                      }
+                    </div>
+                  </label>
+
+                  <div class="row-actions">
+                    @if (item.isExtra) {
+                      <button
+                        type="button"
+                        class="btn-row-chip"
+                        (click)="removeExtraFromTarget(item.tortero.id)"
+                        title="Quitar de la lista de este envío"
+                        [disabled]="isSendingBulk()"
+                      >
+                        ✕ Quitar
+                      </button>
+                    } @else if (item.skippedToday) {
+                      <button
+                        type="button"
+                        class="btn-row-chip restore"
+                        (click)="toggleSkipForTarget(item.tortero, false)"
+                        title="Volver a incluir en la lista"
+                        [disabled]="isSendingBulk()"
+                      >
+                        ↩️ Incluir
+                      </button>
+                    } @else {
+                      <button
+                        type="button"
+                        class="btn-row-chip skip"
+                        (click)="toggleSkipForTarget(item.tortero, true)"
+                        title="Marcar que ya mandó mensaje antes para no enviarle doble"
+                        [disabled]="isSendingBulk()"
+                      >
+                        ⏭️ Ya avisó
+                      </button>
+                    }
+
+                    <button
+                      type="button"
+                      class="btn-row-icon"
+                      (click)="openEditModal(item.tortero)"
+                      title="Editar datos o días del tortero"
+                      [disabled]="isSendingBulk()"
+                    >
+                      ✏️
+                    </button>
+                  </div>
+                </div>
+              }
+            </div>
+          }
+
+          <!-- AGREGAR OTROS TORTEROS SOLO PARA ESTE ENVÍO -->
+          @if (availableExtraTorteros().length > 0) {
+            <div class="extra-add-box">
+              <div class="extra-head">
+                <strong>➕ Incluir otro tortero solo para este envío</strong>
+                <small>No modifica sus días fijos del catálogo</small>
+              </div>
+              <div class="extra-chips">
+                @for (extra of availableExtraTorteros(); track extra.id) {
+                  <button
+                    type="button"
+                    class="extra-chip-btn"
+                    (click)="addExtraToTarget(extra.id)"
+                    [disabled]="isSendingBulk()"
+                    title="Agregar a {{ extra.name }} a la lista de {{ targetDayName() }}"
+                  >
+                    + {{ extra.name }}
+                  </button>
+                }
+              </div>
+            </div>
+          }
+        </div>
+
+        <!-- COLUMNA DERECHA: MENSAJE AUTOMÁTICO POR HORA Y BOTÓN 1 CLIC -->
+        <aside class="composer-panel card">
+          <div class="composer-head">
+            <h2>💬 Mensaje de WhatsApp</h2>
+            <span class="greeting-pill">
+              {{ greetingInfo().emoji }} {{ greetingInfo().label }}
+            </span>
+          </div>
+
+          @if (connectedDevices().length === 0) {
+            <div class="alert alert-warning">
+              ⚠️ No hay ninguna línea de WhatsApp conectada en este momento.
+              <a routerLink="/whatsapp" class="alert-link">Vincular línea en WhatsApp →</a>
+            </div>
+          } @else if (connectedDevices().length > 1) {
+            <div class="modern-field" style="margin-bottom: 0.75rem;">
+              <label for="torteroDeviceSelect" class="modern-label">
+                <span class="label-icon">📱</span> Enviar desde la línea:
+              </label>
+              <select
+                id="torteroDeviceSelect"
+                class="modern-select"
+                [ngModel]="selectedDeviceId()"
+                (ngModelChange)="selectedDeviceId.set($event)"
+                [disabled]="isSendingBulk()"
+              >
+                @for (dev of connectedDevices(); track dev.id) {
+                  <option [ngValue]="dev.id">
+                    {{ dev.name }} {{ dev.phone ? '(' + dev.phone + ')' : '' }}
+                  </option>
+                }
+              </select>
+            </div>
+          } @else {
+            <div class="connected-line-pill">
+              <span>🟢 Línea activa:</span>
+              <strong>{{ connectedDevices()[0].name }}</strong>
+            </div>
+          }
+
+          <div class="modern-field" style="margin-bottom: 0.5rem;">
+            <div class="textarea-top">
+              <label for="bulkMsgInput" class="modern-label">
+                <span class="label-icon">✉️</span> Texto a enviar:
+              </label>
+              <div class="msg-helpers">
+                <button
+                  type="button"
+                  class="btn-link-action"
+                  (click)="resetDefaultMessage()"
+                  [disabled]="isSendingBulk()"
+                >
+                  🔄 Saludo según hora
+                </button>
+                <button
+                  type="button"
+                  class="btn-link-action"
+                  (click)="insertNamePlaceholder()"
+                  [disabled]="isSendingBulk()"
+                  title="Opcional: personaliza cada mensaje con el nombre del tortero"
+                >
+                  + &#123;nombre&#125;
+                </button>
+              </div>
+            </div>
+
+            <textarea
+              id="bulkMsgInput"
+              rows="4"
+              class="modern-textarea"
+              [ngModel]="messageText()"
+              (ngModelChange)="messageText.set($event)"
+              [disabled]="isSendingBulk()"
+              placeholder="Escribe el mensaje para tus torteros..."
+            ></textarea>
+            <small class="help-text">
+              El saludo se ajusta automáticamente según la hora (Buenos días / Buenas tardes / Buenas noches).
+            </small>
+          </div>
+
+          @if (bulkSendResult(); as res) {
+            <div
+              class="alert"
+              [class.alert-success]="res.sent_count > 0 && res.failed_count === 0"
+              [class.alert-warning]="res.sent_count > 0 && res.failed_count > 0"
+              [class.alert-error]="res.sent_count === 0"
+            >
+              <strong>{{ res.sent_count > 0 ? '✅' : '❌' }} {{ res.message }}</strong>
+              @if (res.failed_count > 0) {
+                <small style="display: block; margin-top: 0.25rem;">
+                  Revisa los destinatarios marcados en rojo en la lista para ver el detalle.
+                </small>
+              }
+            </div>
+          }
+
+          <button
+            type="button"
+            class="btn btn-success btn-lg send-all-btn"
+            (click)="sendMessagesToSelected()"
+            [disabled]="isSendingBulk() || selectedCountForTarget() === 0 || !messageText().trim()"
+          >
+            @if (isSendingBulk()) {
+              ⏳ Enviando a {{ selectedCountForTarget() }} tortero(s)...
+            } @else {
+              🚀 Enviar mensaje a {{ selectedCountForTarget() }} tortero(s)
+            }
+          </button>
+
+          @if (selectedCountForTarget() === 0 && scheduledList().length > 0) {
+            <small class="muted-center">
+              Selecciona al menos un tortero de la lista para habilitar el envío.
+            </small>
+          }
+        </aside>
+      </div>
+    }
+  } @else {
+    <!-- TAB 2: CATÁLOGO DE TORTEROS -->
+    <div class="card catalog-toolbar">
+      <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input
+          type="text"
+          class="search-input"
+          [ngModel]="searchQuery()"
+          (ngModelChange)="searchQuery.set($event)"
+          placeholder="Buscar tortero por nombre, celular o notas..."
+        />
+        @if (searchQuery()) {
+          <button type="button" class="clear-btn" (click)="searchQuery.set('')">Limpiar</button>
+        }
+      </div>
+
+      <div class="day-filter-pills">
+        <button
+          type="button"
+          class="filter-pill"
+          [class.active]="dayFilter() === 'all'"
+          (click)="dayFilter.set('all')"
+        >
+          Todos ({{ torteros().length }})
+        </button>
+        @for (d of weekDays; track d.key) {
+          <button
+            type="button"
+            class="filter-pill"
+            [class.active]="dayFilter() === d.key"
+            (click)="dayFilter.set(d.key)"
+          >
+            {{ d.short }}
+          </button>
+        }
+      </div>
+    </div>
+
+    @if (filteredCatalog().length === 0) {
+      <div class="card empty-state">
+        <div class="empty-emoji">🥖</div>
+        <h3>No hay torteros que coincidan</h3>
+        <p>
+          @if (searchQuery() || dayFilter() !== 'all') {
+            Prueba limpiando los filtros de búsqueda o día.
+          } @else {
+            Registra tu primer tortero para empezar a programar sus días de mensaje.
+          }
+        </p>
+        <button type="button" class="btn btn-primary" (click)="openCreateModal()">
+          ➕ Nuevo Tortero
+        </button>
+      </div>
+    } @else {
+      <div class="catalog-grid">
+        @for (tortero of filteredCatalog(); track tortero.id) {
+          <article class="tortero-card card" [class.inactive]="!tortero.is_active">
+            <div class="card-top">
+              <div class="identity">
+                <h3>🥖 {{ tortero.name }}</h3>
+                <a [href]="getTelUrl(tortero.phone)" class="phone-link">
+                  📞 {{ formatPhone(tortero.phone) }}
+                </a>
+              </div>
+
+              <button
+                type="button"
+                class="status-badge"
+                [class.active]="tortero.is_active"
+                (click)="toggleActive(tortero)"
+                title="Clic para activar o pausar"
+              >
+                {{ tortero.is_active ? '🟢 Activo' : '⚪ Pausado' }}
+              </button>
+            </div>
+
+            <div class="days-grid-display">
+              <span class="days-label">Días que pide tacos:</span>
+              <div class="days-row">
+                @for (d of weekDays; track d.key) {
+                  <span
+                    class="day-pill-view"
+                    [class.active]="tortero.delivery_days.includes(d.key)"
+                  >
+                    {{ d.short }}
+                  </span>
+                }
+              </div>
+            </div>
+
+            @if (tortero.notes) {
+              <div class="notes-pill">
+                📝 {{ tortero.notes }}
+              </div>
+            }
+
+            <div class="card-foot">
+              <span class="last-sent-info">
+                @if (tortero.last_sent_for_date) {
+                  Último envío: para {{ formatShortDate(tortero.last_sent_for_date) }}
+                } @else {
+                  Sin envíos recientes
+                }
+              </span>
+
+              <div class="crud-btns">
+                <button
+                  type="button"
+                  class="btn btn-outline btn-sm"
+                  (click)="openEditModal(tortero)"
+                  title="Editar tortero"
+                >
+                  ✏️ Editar
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-danger-ghost btn-sm"
+                  (click)="openDeleteModal(tortero)"
+                  title="Eliminar tortero"
+                >
+                  🗑️
+                </button>
+              </div>
+            </div>
+          </article>
+        }
+      </div>
+    }
+  }
+
+  <!-- MODAL: CREAR / EDITAR TORTERO -->
+  @if (formModalOpen()) {
+    <div class="modal-backdrop" (click)="closeFormModal()">
+      <div class="modal-panel modern-modal tortero-modal" (click)="$event.stopPropagation()">
+        <div class="modal-head">
+          <div class="head-title">
+            <span class="icon">{{ editingTortero() ? '✏️' : '➕' }}</span>
+            <div>
+              <h3>{{ editingTortero() ? 'Editar Tortero' : 'Registrar Nuevo Tortero' }}</h3>
+              <p>Solo nombre, celular y los días en que necesita tacos</p>
+            </div>
+          </div>
+          <button type="button" class="btn-close" (click)="closeFormModal()" [disabled]="isSaving()">✕</button>
+        </div>
+
+        <div class="modal-body">
+          @if (formError()) {
+            <div class="alert alert-error" style="margin-bottom: 0.9rem;">
+              ❌ {{ formError() }}
+            </div>
+          }
+
+          <div class="modern-field">
+            <label for="torteroName" class="modern-label">
+              <span class="label-icon">👤</span> Nombre del Tortero / Negocio <span class="required-star">*</span>
+            </label>
+            <input
+              id="torteroName"
+              type="text"
+              class="modern-input"
+              [ngModel]="formName()"
+              (ngModelChange)="formName.set($event)"
+              placeholder="Ej. Don Pepe Tortas"
+              [disabled]="isSaving()"
+              autofocus
+            />
+          </div>
+
+          <div class="modern-field">
+            <label for="torteroPhone" class="modern-label">
+              <span class="label-icon">📱</span> Número de Celular (WhatsApp) <span class="required-star">*</span>
+            </label>
+            <div class="phone-wrap">
+              <span class="phone-prefix-tag">🇲🇽 +52</span>
+              <input
+                id="torteroPhone"
+                type="tel"
+                class="modern-input with-prefix"
+                [ngModel]="formPhone()"
+                (ngModelChange)="formPhone.set($event)"
+                placeholder="10 dígitos (ej. 33 1234 5678)"
+                [disabled]="isSaving()"
+              />
+            </div>
+          </div>
+
+          <div class="modern-field">
+            <div class="days-picker-head">
+              <label class="modern-label">
+                <span class="label-icon">📅</span> Días que pide tacos <span class="required-star">*</span>
+              </label>
+              <div class="preset-btns">
+                <button type="button" class="preset-btn" (click)="applyDayPreset('mon_sat')" [disabled]="isSaving()">
+                  Lun a Sáb
+                </button>
+                <button type="button" class="preset-btn" (click)="applyDayPreset('all')" [disabled]="isSaving()">
+                  Todos
+                </button>
+                <button type="button" class="preset-btn" (click)="applyDayPreset('weekend')" [disabled]="isSaving()">
+                  Fin de semana
+                </button>
+              </div>
+            </div>
+
+            <div class="days-selector-grid">
+              @for (d of weekDays; track d.key) {
+                <button
+                  type="button"
+                  class="day-toggle-btn"
+                  [class.selected]="formDays().includes(d.key)"
+                  (click)="toggleFormDay(d.key)"
+                  [disabled]="isSaving()"
+                >
+                  {{ d.short }}
+                </button>
+              }
+            </div>
+            <small class="help-text">
+              El sistema te lo sugerirá automáticamente un día antes de cada día marcado.
+            </small>
+          </div>
+
+          <div class="modern-field">
+            <label for="torteroNotes" class="modern-label">
+              <span class="label-icon">📝</span> Notas (opcional)
+            </label>
+            <input
+              id="torteroNotes"
+              type="text"
+              class="modern-input"
+              [ngModel]="formNotes()"
+              (ngModelChange)="formNotes.set($event)"
+              placeholder="Ej. Suele pedir 50 de papa y 30 de frijol"
+              [disabled]="isSaving()"
+            />
+          </div>
+
+          <div class="modern-checkbox-row">
+            <label class="custom-checkbox">
+              <input
+                type="checkbox"
+                [ngModel]="formActive()"
+                (ngModelChange)="formActive.set($event)"
+                [disabled]="isSaving()"
+              />
+              <span class="checkbox-text">
+                <strong>Tortero Activo</strong>
+                <small>Incluirlo automáticamente en las listas de mensajes programados</small>
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" (click)="closeFormModal()" [disabled]="isSaving()">
+            Cancelar
+          </button>
+          <button
+            type="button"
+            class="btn btn-primary"
+            (click)="saveTortero()"
+            [disabled]="isSaving() || !canSaveForm()"
+          >
+            {{ isSaving() ? 'Guardando...' : (editingTortero() ? '💾 Guardar Cambios' : '➕ Guardar Tortero') }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- MODAL: ELIMINAR TORTERO -->
+  @if (deletingTortero(); as tortero) {
+    <div class="modal-backdrop" (click)="closeDeleteModal()">
+      <div class="modal-panel modern-modal" (click)="$event.stopPropagation()">
+        <div class="modal-head delete-head">
+          <div class="head-title">
+            <span class="delete-icon">🗑️</span>
+            <div>
+              <h3>Eliminar Tortero</h3>
+              <p>{{ tortero.name }}</p>
+            </div>
+          </div>
+          <button type="button" class="btn-close" (click)="closeDeleteModal()" [disabled]="isDeleting()">✕</button>
+        </div>
+
+        <div class="modal-body">
+          <div class="summary-pill">
+            <div><strong>Nombre:</strong> {{ tortero.name }}</div>
+            <div><strong>Celular:</strong> {{ formatPhone(tortero.phone) }}</div>
+          </div>
+          <p style="margin: 0.85rem 0 0;">
+            ¿Confirmas que deseas eliminar este tortero del catálogo? Esta acción no se puede deshacer.
+          </p>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" (click)="closeDeleteModal()" [disabled]="isDeleting()">
+            Cancelar
+          </button>
+          <button type="button" class="btn btn-danger" (click)="confirmDelete()" [disabled]="isDeleting()">
+            {{ isDeleting() ? 'Eliminando...' : '🗑️ Sí, eliminar' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+</section>

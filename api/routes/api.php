@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PackageController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\PromotionController;
+use App\Http\Controllers\Api\TorteroController;
 use App\Http\Controllers\Api\WhatsAppDeviceController;
 use Illuminate\Support\Facades\Route;
 
@@ -62,6 +63,12 @@ Route::middleware('auth:sanctum')->group(function () {
     // Employees Catalog
     Route::apiResource('employees', EmployeeController::class);
     Route::patch('/employees/{employee}/toggle-active', [EmployeeController::class, 'toggleActive']);
+
+    // Torteros Catalog & Bulk Messaging
+    Route::post('/torteros/send-messages', [TorteroController::class, 'sendMessages']);
+    Route::apiResource('torteros', TorteroController::class);
+    Route::patch('/torteros/{tortero}/toggle-active', [TorteroController::class, 'toggleActive']);
+    Route::patch('/torteros/{tortero}/skip-date', [TorteroController::class, 'toggleSkipDate']);
 
     // Google Maps Settings & Fallback Search
     Route::get('/settings/maps', [MapsSettingsController::class, 'show']);

@@ -14,6 +14,8 @@ import {
   Product,
   Promotion,
   TodayOrdersResponse,
+  Tortero,
+  TorteroBulkSendResponse,
   WhatsAppDevice,
   WhatsAppDevicesResponse,
 } from '../models/api.models';
@@ -322,5 +324,57 @@ export class ApiService {
       recipient?: string;
       sent_text?: string;
     }>(`${this.apiUrl}/orders/${orderId}/whatsapp`, payload);
+  }
+
+  // Torteros Catalog & Bulk WhatsApp Messaging
+  getTorteros(options?: { active_only?: boolean; day?: string }): Observable<Tortero[]> {
+    let params = new HttpParams();
+    if (options?.active_only) params = params.set('active_only', '1');
+    if (options?.day) params = params.set('day', options.day);
+    return this.http.get<Tortero[]>(`${this.apiUrl}/torteros`, { params });
+  }
+
+  createTortero(data: {
+    name: string;
+    phone: string;
+    delivery_days: string[];
+    notes?: string | null;
+    is_active?: boolean;
+  }): Observable<Tortero> {
+    return this.http.post<Tortero>(`${this.apiUrl}/torteros`, data);
+  }
+
+  updateTortero(
+    id: number,
+    data: {
+      name: string;
+      phone: string;
+      delivery_days: string[];
+      notes?: string | null;
+      is_active?: boolean;
+    }
+  ): Observable<Tortero> {
+    return this.http.put<Tortero>(`${this.apiUrl}/torteros/${id}`, data);
+  }
+
+  toggleTorteroActive(id: number): Observable<Tortero> {
+    return this.http.patch<Tortero>(`${this.apiUrl}/torteros/${id}/toggle-active`, {});
+  }
+
+  toggleTorteroSkipDate(id: number, date: string, skip: boolean): Observable<Tortero> {
+    return this.http.patch<Tortero>(`${this.apiUrl}/torteros/${id}/skip-date`, { date, skip });
+  }
+
+  deleteTortero(id: number): Observable<{ message: string }> {
+    return this.http.delete<{ message: string }>(`${this.apiUrl}/torteros/${id}`);
+  }
+
+  sendTorterosMessages(payload: {
+    tortero_ids: number[];
+    target_date: string;
+    device_id?: number;
+    message?: string;
+  }): Observable<TorteroBulkSendResponse> {
+    return this.http.post<TorteroBulkSendResponse>(`${this.apiUrl}/torteros/send-messages`, payload);
   }
 }

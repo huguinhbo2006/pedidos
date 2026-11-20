@@ -907,6 +907,124 @@ class TacosDoradosApiTest extends TestCase
         ]);
     }
 
+    public function test_torteros_catalog_day_filter_skip_and_bulk_whatsapp_send(): void
+    {
+        $token = $this->authenticate();
+
+        // 1. Validar saludo según hora del día
+        $this->assertSame('Buenos días', \App\Http\Controllers\Api\TorteroController::greetingForHour(9));
+        $this->assertSame('Buenas tardes', \App\Http\Controllers\Api\TorteroController::greetingForHour(15));
+        $this->assertSame('Buenas noches', \App\Http\Controllers\Api\TorteroController::greetingForHour(21));
+        $this->assertSame('Buenas noches', \App\Http\Controllers\Api\TorteroController::greetingForHour(2));
+
+        // 2. Validar reglas al crear tortero
+        $this->withToken($token)
+            ->postJson('/api/torteros', [
+                'name' => 'Don Pepe',
+                'phone' => '123',
+                'delivery_days' => ['invalid_day'],
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['phone', 'delivery_days.0']);
+
+        // 3. Crear dos torteros con días distintos
+        $t1 = $this->withToken($token)
+            ->postJson('/api/torteros', [
+                'name' => 'Don Pepe Tortas',
+                'phone' => '33 1122 3344',
+                'delivery_days' => ['saturday', 'friday'],
+                'notes' => 'Pide 50 tacos',
+            ])
+            ->assertStatus(201)
+            ->assertJsonPath('phone', '3311223344')
+            ->assertJsonPath('delivery_days', ['friday', 'saturday'])
+            ->json();
+
+        $t2 = $this->withToken($token)
+            ->postJson('/api/torteros', [
+                'name' => 'Tortas El Güero',
+                'phone' => '3355667788',
+                'delivery_days' => ['saturday', 'sunday'],
+            ])
+            ->assertStatus(201)
+            ->json();
+
+        // 4. Filtrar por día sábado -> devuelve ambos
+        $this->withToken($token)
+            ->getJson('/api/torteros?day=saturday')
+            ->assertOk()
+            ->assertJsonCount(2);
+
+        // 5. Marcar "Ya avisó / Omitir" para mañana en Don Pepe
+        $tomorrow = \Carbon\Carbon::tomorrow()->toDateString();
+        $this->withToken($token)
+            ->patchJson("/api/torteros/{$t1['id']}/skip-date", [
+                'date' => $tomorrow,
+                'skip' => true,
+            ])
+            ->assertOk()
+            ->assertJsonPath('skipped_for_date', $tomorrow);
+
+        // 6. Enviar WhatsApp masivo (simulado con dispositivo conectado)
+        \App\Models\WhatsAppDevice::create([
+            'session_id' => 'wa_torteros_test',
+            'name' => 'Línea Torteros',
+            'status' => 'CONNECTED',
+            'is_default' => true,
+        ]);
+
+        \Illuminate\Support\Facades\Http::fake([
+            '*/sessions/*/send-message' => \Illuminate\Support\Facades\Http::sequence()
+                ->push(['success' => true, 'id' => 'msg_1'], 200)
+                ->push(['error' => 'Número sin WhatsApp'], 422),
+        ]);
+
+        $sendResp = $this->withToken($token)
+            ->postJson('/api/torteros/send-messages', [
+                'tortero_ids' => [$t1['id'], $t2['id']],
+                'target_date' => $tomorrow,
+                'message' => '¡Buenas tardes, {nombre}! Disculpe, ¿necesitaría tacos para el día de mañana?',
+            ])
+            ->assertOk();
+
+        $sendResp
+            ->assertJsonPath('sent_count', 1)
+            ->assertJsonPath('failed_count', 1);
+
+        $this->assertDatabaseHas('torteros', [
+            'id' => $t1['id'],
+            'last_sent_for_date' => $tomorrow,
+            'skipped_for_date' => null,
+        ]);
+
+        $this->assertDatabaseHas('torteros', [
+            'id' => $t2['id'],
+            'last_sent_for_date' => null,
+        ]);
+
+        // 7. Editar, pausar y eliminar tortero
+        $this->withToken($token)
+            ->putJson("/api/torteros/{$t2['id']}", [
+                'name' => 'Tortas El Güero Centro',
+                'phone' => '3399001122',
+                'delivery_days' => ['monday'],
+                'is_active' => true,
+            ])
+            ->assertOk()
+            ->assertJsonPath('name', 'Tortas El Güero Centro');
+
+        $this->withToken($token)
+            ->patchJson("/api/torteros/{$t2['id']}/toggle-active")
+            ->assertOk()
+            ->assertJsonPath('is_active', false);
+
+        $this->withToken($token)
+            ->deleteJson("/api/torteros/{$t2['id']}")
+            ->assertOk();
+
+        $this->assertDatabaseMissing('torteros', ['id' => $t2['id']]);
+    }
+
     private function authenticate(): string
     {
         return $this->postJson('/api/login', [
