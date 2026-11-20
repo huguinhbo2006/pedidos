@@ -227,6 +227,15 @@
 
               <button
                 type="button"
+                class="btn btn-pdf-wa-btn btn-sm"
+                (click)="openWhatsAppModal(order, 'customer', true)"
+                title="Enviar comprobante ticket PDF oficial por WhatsApp"
+              >
+                📎 Enviar PDF
+              </button>
+
+              <button
+                type="button"
                 class="btn btn-whatsapp-btn btn-sm"
                 (click)="openWhatsAppModal(order)"
                 title="Enviar notificación por WhatsApp al cliente o repartidor"
@@ -388,7 +397,7 @@
         </div>
 
         <div class="confirm-body">
-          <!-- SELECTOR DE DESTINATARIO: CLIENTE VS REPARTIDOR -->
+          <!-- SELECTOR DE DESTINATARIO: CLIENTE VS EMPLEADO -->
           <div class="wa-recipient-selector">
             <button
               type="button"
@@ -412,11 +421,13 @@
           </div>
 
           @if (whatsappRecipientType() === 'employee') {
-            <div class="form-group" style="margin-top: 0.85rem;">
-              <label for="waEmpSelect"><strong>Seleccionar Empleado destinatario: *</strong></label>
+            <div class="form-group modern-field" style="margin-top: 0.85rem;">
+              <label for="waEmpSelect" class="modern-label">
+                <span class="label-icon">👤</span> Seleccionar Empleado destinatario: <span class="required-star">*</span>
+              </label>
               <select
                 id="waEmpSelect"
-                class="form-control"
+                class="form-control modern-select"
                 [ngModel]="whatsappSelectedEmployeeId()"
                 (ngModelChange)="onWhatsAppEmployeeChange($event)"
                 [disabled]="isSendingWhatsApp()"
@@ -442,27 +453,45 @@
             </div>
           }
 
-          <div class="form-group" style="margin-top: 0.85rem;">
+          <!-- CASILLA ELEGANTE PARA ADJUNTAR TICKET PDF -->
+          <div class="pdf-attachment-card" [class.active]="whatsappSendPdf()">
+            <label class="pdf-attachment-label">
+              <input
+                type="checkbox"
+                [ngModel]="whatsappSendPdf()"
+                (ngModelChange)="whatsappSendPdf.set($event)"
+                [disabled]="isSendingWhatsApp()"
+              />
+              <div class="pdf-label-info">
+                <span class="pdf-title">📄 Adjuntar Ticket oficial en PDF</span>
+                <small class="pdf-desc">Se generará y enviará el archivo PDF oficial con logotipo de Taquería Mary y desglose completo.</small>
+              </div>
+            </label>
+          </div>
+
+          <div class="form-group modern-field" style="margin-top: 0.85rem;">
             <div class="textarea-head">
-              <label for="waMsg"><strong>Mensaje a enviar:</strong></label>
+              <label for="waMsg" class="modern-label">
+                <span class="label-icon">✉️</span> Mensaje de texto a enviar:
+              </label>
               <button
                 type="button"
                 class="btn-text-action"
                 (click)="refreshWhatsAppMessagePreview()"
                 [disabled]="isSendingWhatsApp()"
               >
-                🔄 Restaurar plantilla
+                🔄 Restaurar formato
               </button>
             </div>
             <textarea
               id="waMsg"
               rows="6"
-              class="form-control wa-textarea"
+              class="form-control wa-textarea modern-textarea"
               [(ngModel)]="whatsappMessageText"
               [disabled]="isSendingWhatsApp()"
             ></textarea>
             <small class="help-text">
-              Puedes editar el mensaje antes de enviarlo. El texto admite formato de WhatsApp (*negrita*, etc.).
+              Puedes editar o agregar notas antes de enviar. El texto admite formato de WhatsApp (*negrita*, etc.).
             </small>
           </div>
         </div>
@@ -482,7 +511,7 @@
             (click)="sendOrderWhatsApp()"
             [disabled]="isSendingWhatsApp() || !whatsappMessageText().trim() || (whatsappRecipientType() === 'employee' && !whatsappSelectedEmployeeId())"
           >
-            {{ isSendingWhatsApp() ? '⏳ Enviando...' : '🚀 Enviar desde el Sistema' }}
+            {{ isSendingWhatsApp() ? '⏳ Enviando...' : (whatsappSendPdf() ? '🚀 Enviar con Ticket PDF' : '🚀 Enviar Mensaje') }}
           </button>
         </div>
       </div>

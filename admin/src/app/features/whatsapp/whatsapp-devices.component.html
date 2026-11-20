@@ -195,19 +195,23 @@
           @if (!activeQrDevice()) {
             <!-- PASO 1: ASIGNAR NOMBRE -->
             <div class="step-form">
-              <label for="devName"><strong>Nombre o Alias para esta línea:</strong></label>
-              <input
-                id="devName"
-                type="text"
-                class="form-control"
-                [(ngModel)]="newDeviceName"
-                placeholder="Ej. Línea Pedidos 1, Atención Mostrador, Repartos"
-                (keyup.enter)="startDeviceCreation()"
-                autofocus
-              />
-              <small class="help-text">
-                Un nombre que te ayude a identificar qué celular o empleado usará este número.
-              </small>
+              <div class="form-group modern-field">
+                <label for="devName" class="modern-label">
+                  <span class="label-icon">💬</span> Nombre o Alias para esta línea <span class="required-star">*</span>
+                </label>
+                <input
+                  id="devName"
+                  type="text"
+                  class="form-control modern-input"
+                  [(ngModel)]="newDeviceName"
+                  placeholder="Ej. Línea Principal Taquería, Atención Mostrador"
+                  (keyup.enter)="startDeviceCreation()"
+                  autofocus
+                />
+                <small class="help-text">
+                  Un nombre que te ayude a identificar qué celular o empleado usará este número.
+                </small>
+              </div>
 
               <div class="modal-actions" style="margin-top: 1.25rem;">
                 <button type="button" class="btn btn-outline" (click)="closeConnectingModal()">
@@ -420,28 +424,35 @@
             </div>
           }
 
-          <div class="form-group" style="margin-bottom: 1rem;">
-            <label for="testPhone"><strong>Número de WhatsApp destino:</strong></label>
-            <input
-              id="testPhone"
-              type="tel"
-              class="form-control"
-              [(ngModel)]="testPhone"
-              placeholder="Ej. 3312345678 o 523312345678"
-              [disabled]="isSendingTest()"
-              autofocus
-            />
+          <div class="form-group modern-field">
+            <label for="testPhone" class="modern-label">
+              <span class="label-icon">📱</span> Número de WhatsApp destino <span class="required-star">*</span>
+            </label>
+            <div class="input-wrap phone-wrap">
+              <span class="phone-prefix-tag">🇲🇽 +52</span>
+              <input
+                id="testPhone"
+                type="tel"
+                class="form-control modern-input with-prefix"
+                [(ngModel)]="testPhone"
+                placeholder="10 dígitos (ej. 33 1234 5678)"
+                [disabled]="isSendingTest()"
+                autofocus
+              />
+            </div>
             <small class="help-text">
-              Introduce el número celular a 10 dígitos (México) o en formato internacional.
+              Introduce el número celular a 10 dígitos (México) o en formato internacional con lada.
             </small>
           </div>
 
-          <div class="form-group">
-            <label for="testMessage"><strong>Mensaje a enviar:</strong></label>
+          <div class="form-group modern-field">
+            <label for="testMessage" class="modern-label">
+              <span class="label-icon">✉️</span> Mensaje de prueba a enviar
+            </label>
             <textarea
               id="testMessage"
               rows="3"
-              class="form-control"
+              class="form-control modern-textarea"
               [(ngModel)]="testMessageText"
               placeholder="Escribe el texto de prueba aquí..."
               [disabled]="isSendingTest()"

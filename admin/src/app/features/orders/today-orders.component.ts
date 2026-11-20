@@ -48,6 +48,7 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
   readonly whatsappDevices = signal<WhatsAppDevice[]>([]);
   readonly whatsappMessageText = signal('');
   readonly isSendingWhatsApp = signal(false);
+  readonly whatsappSendPdf = signal<boolean>(false);
   readonly whatsappStatus = signal<{ type: 'success' | 'error'; message: string } | null>(null);
 
   readonly displayedOrders = computed(() =>
@@ -222,7 +223,8 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
   }
 
   // --- WhatsApp Order Notifications ---
-  openWhatsAppModal(order: Order, defaultType: 'customer' | 'employee' = 'employee'): void {
+  openWhatsAppModal(order: Order, defaultType: 'customer' | 'employee' = 'employee', withPdf = false): void {
+    this.whatsappSendPdf.set(withPdf);
     this.whatsappTargetOrder.set(order);
     this.whatsappRecipientType.set(defaultType);
     this.whatsappStatus.set(null);
@@ -381,6 +383,7 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
       recipient_type: type,
       employee_id: empId ?? undefined,
       message: this.whatsappMessageText().trim(),
+      send_pdf: this.whatsappSendPdf(),
     }).subscribe({
       next: (res) => {
         this.isSendingWhatsApp.set(false);

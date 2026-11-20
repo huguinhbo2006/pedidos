@@ -629,6 +629,11 @@ class TacosDoradosApiTest extends TestCase
                 'messageId' => 'test-msg-123',
                 'status' => 'sent',
             ], 200),
+            '*/sessions/*/send-media' => \Illuminate\Support\Facades\Http::response([
+                'success' => true,
+                'messageId' => 'test-media-123',
+                'status' => 'sent',
+            ], 200),
         ]);
 
         // 1. Crear dispositivo WhatsApp conectado
@@ -722,6 +727,17 @@ class TacosDoradosApiTest extends TestCase
 
         $this->assertTrue($waEmpResp->json('success'));
         $this->assertStringContainsString('5213311223344', $waEmpResp->json('recipient'));
+
+        // 7.5 Enviar WhatsApp con PDF adjunto
+        $waPdfResp = $this->withToken($token)
+            ->postJson("/api/orders/{$orderId}/whatsapp", [
+                'recipient_type' => 'customer',
+                'send_pdf' => true,
+            ])
+            ->assertOk();
+
+        $this->assertTrue($waPdfResp->json('success'));
+        $this->assertTrue($waPdfResp->json('sent_pdf'));
 
         // 8. Eliminar empleado
         $this->withToken($token)

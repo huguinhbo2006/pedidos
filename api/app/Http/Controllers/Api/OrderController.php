@@ -771,6 +771,7 @@ class OrderController extends Controller
             'employee_id' => ['nullable', 'integer', 'exists:employees,id'],
             'device_id' => ['nullable', 'integer', 'exists:whatsapp_devices,id'],
             'message' => ['nullable', 'string', 'max:2000'],
+            'send_pdf' => ['nullable', 'boolean'],
         ]);
 
         $order->load(['items', 'assignedEmployee']);
@@ -843,20 +844,38 @@ class OrderController extends Controller
 
         $savedUrl = AppSetting::getValue('whatsapp_api_url');
         $apiUrl = rtrim($savedUrl ?: env('WHATSAPP_API_URL', 'https://whatsapp-api-production-80b7.up.railway.app'), '/');
+        $sendPdf = $request->boolean('send_pdf');
 
         try {
-            $response = Http::timeout(15)->post("{$apiUrl}/sessions/{$device->session_id}/send-message", [
-                'numero' => $cleanNumber,
-                'mensaje' => $messageText,
-            ]);
+            if ($sendPdf) {
+                $pdfBase64 = $this->generateOrderPdfBase64($order);
+                $fileName = "ticket-{$order->order_number}.pdf";
+
+                $response = Http::timeout(25)->post("{$apiUrl}/sessions/{$device->session_id}/send-media", [
+                    'numero' => $cleanNumber,
+                    'mediaBase64' => $pdfBase64,
+                    'fileName' => $fileName,
+                    'type' => 'document',
+                    'mimetype' => 'application/pdf',
+                    'caption' => $messageText,
+                ]);
+            } else {
+                $response = Http::timeout(15)->post("{$apiUrl}/sessions/{$device->session_id}/send-message", [
+                    'numero' => $cleanNumber,
+                    'mensaje' => $messageText,
+                ]);
+            }
 
             if ($response->successful()) {
                 return response()->json([
                     'success' => true,
-                    'message' => '¡Mensaje de WhatsApp enviado exitosamente!',
+                    'message' => $sendPdf
+                        ? '¡Ticket PDF de WhatsApp enviado exitosamente!'
+                        : '¡Mensaje de WhatsApp enviado exitosamente!',
                     'device' => $device->name,
                     'recipient' => $cleanNumber,
                     'sent_text' => $messageText,
+                    'sent_pdf' => $sendPdf,
                 ]);
             }
 
@@ -871,6 +890,24 @@ class OrderController extends Controller
                 'error' => 'Error de conexión con el servicio de WhatsApp en Railway: ' . $e->getMessage(),
             ], 500);
         }
+    }
+
+    private function generateOrderPdfBase64(Order $order): string
+    {
+        $order->load('items');
+
+        $logoBase64 = null;
+        $logoPath = public_path('images/logo-mary.jpg');
+        if (is_file($logoPath)) {
+            $logoBase64 = 'data:image/jpeg;base64,' . base64_encode((string) file_get_contents($logoPath));
+        }
+
+        $pdf = Pdf::loadView('pdf.order', [
+            'order' => $order,
+            'logoBase64' => $logoBase64,
+        ])->setPaper('letter', 'portrait');
+
+        return base64_encode($pdf->output());
     }
 
     private function buildOrderWhatsAppTemplate(Order $order, string $type, ?Employee $employee = null): string

@@ -302,6 +302,7 @@ export class ApiService {
       employee_id?: number;
       device_id?: number;
       message?: string;
+      send_pdf?: boolean;
     }
   ): Observable<{
     success: boolean;
@@ -309,6 +310,7 @@ export class ApiService {
     device?: string;
     recipient?: string;
     sent_text?: string;
+    sent_pdf?: boolean;
   }> {
     return this.http.post<{
       success: boolean;

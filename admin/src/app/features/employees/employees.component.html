@@ -195,61 +195,81 @@
         </div>
 
         <div class="modal-body">
-          <div class="form-group" style="margin-bottom: 1rem;">
-            <label for="empName"><strong>Nombre Completo: *</strong></label>
-            <input
-              id="empName"
-              type="text"
-              class="form-control"
-              [(ngModel)]="formName"
-              placeholder="Ej. Juan Pérez López"
-              [disabled]="isSaving()"
-              autofocus
-            />
+          <div class="form-group modern-field">
+            <label for="empName" class="modern-label">
+              <span class="label-icon">👤</span> Nombre Completo <span class="required-star">*</span>
+            </label>
+            <div class="input-wrap">
+              <input
+                id="empName"
+                type="text"
+                class="form-control modern-input"
+                [(ngModel)]="formName"
+                placeholder="Ej. Juan Pérez López"
+                [disabled]="isSaving()"
+                autofocus
+              />
+            </div>
           </div>
 
-          <div class="form-group" style="margin-bottom: 1rem;">
-            <label for="empPhone"><strong>Teléfono Celular (WhatsApp): *</strong></label>
-            <input
-              id="empPhone"
-              type="tel"
-              class="form-control"
-              [(ngModel)]="formPhone"
-              placeholder="Ej. 3312345678"
-              [disabled]="isSaving()"
-            />
+          <div class="form-group modern-field">
+            <label for="empPhone" class="modern-label">
+              <span class="label-icon">📱</span> Teléfono Celular (WhatsApp) <span class="required-star">*</span>
+            </label>
+            <div class="input-wrap phone-wrap">
+              <span class="phone-prefix-tag">🇲🇽 +52</span>
+              <input
+                id="empPhone"
+                type="tel"
+                class="form-control modern-input with-prefix"
+                [(ngModel)]="formPhone"
+                placeholder="10 dígitos (ej. 33 1234 5678)"
+                [disabled]="isSaving()"
+              />
+            </div>
             <small class="help-text">
-              10 dígitos para México o formato internacional. Se usará para enviar pedidos por WhatsApp.
+              10 dígitos para México o con lada internacional. Se usará para enviar mensajes de WhatsApp.
             </small>
           </div>
 
-          <div class="form-group" style="margin-bottom: 1rem;">
-            <label for="empRole"><strong>Puesto / Función:</strong></label>
-            <select id="empRole" class="form-control" [(ngModel)]="formRole" [disabled]="isSaving()">
-              <option value="repartidor">🛵 Repartidor / Envíos</option>
-              <option value="cocina">👨‍🍳 Cocina / Preparación</option>
-              <option value="caja">💵 Caja / Cobro</option>
-              <option value="mostrador">🌮 Mostrador / Atención</option>
-              <option value="otro">Otro</option>
-            </select>
+          <div class="form-group modern-field">
+            <label for="empRole" class="modern-label">
+              <span class="label-icon">💼</span> Puesto / Función en Taquería Mary
+            </label>
+            <div class="input-wrap">
+              <select id="empRole" class="form-control modern-select" [(ngModel)]="formRole" [disabled]="isSaving()">
+                <option value="repartidor">🛵 Repartidor / Envíos</option>
+                <option value="cocina">👨‍🍳 Cocina / Preparación</option>
+                <option value="caja">💵 Caja / Cobro</option>
+                <option value="mostrador">🌮 Mostrador / Atención</option>
+                <option value="otro">👤 Otro puesto</option>
+              </select>
+            </div>
           </div>
 
-          <div class="form-group" style="margin-bottom: 1rem;">
-            <label for="empNotes"><strong>Notas / Horario / Turno:</strong></label>
-            <input
-              id="empNotes"
-              type="text"
-              class="form-control"
-              [(ngModel)]="formNotes"
-              placeholder="Ej. Turno vespertino, Moto roja mod. 2022"
-              [disabled]="isSaving()"
-            />
+          <div class="form-group modern-field">
+            <label for="empNotes" class="modern-label">
+              <span class="label-icon">📝</span> Horario / Notas adicionales (opcional)
+            </label>
+            <div class="input-wrap">
+              <input
+                id="empNotes"
+                type="text"
+                class="form-control modern-input"
+                [(ngModel)]="formNotes"
+                placeholder="Ej. Turno matutino, descanso los martes"
+                [disabled]="isSaving()"
+              />
+            </div>
           </div>
 
-          <div class="checkbox-row">
+          <div class="checkbox-row modern-checkbox-row">
             <label class="custom-checkbox">
               <input type="checkbox" [(ngModel)]="formActive" [disabled]="isSaving()" />
-              <span><strong>Empleado Activo</strong> (disponible para asignaciones de pedidos)</span>
+              <span class="checkbox-text">
+                <strong>Empleado Activo</strong>
+                <small>Disponible para asignación de pedidos y avisos</small>
+              </span>
             </label>
           </div>
         </div>
@@ -298,17 +318,22 @@
             </div>
           }
 
-          <div class="form-group">
-            <label for="quickMsg"><strong>Mensaje:</strong></label>
+          <div class="form-group modern-field">
+            <label for="quickMsg" class="modern-label">
+              <span class="label-icon">💬</span> Mensaje para el empleado:
+            </label>
             <textarea
               id="quickMsg"
               rows="4"
-              class="form-control"
+              class="form-control modern-textarea"
               [(ngModel)]="quickWaMessage"
               placeholder="Escribe el mensaje para el empleado..."
               [disabled]="isSendingQuickWa()"
               autofocus
             ></textarea>
+            <small class="help-text">
+              El mensaje se enviará por la línea de WhatsApp activa configurada en el sistema.
+            </small>
           </div>
 
           @if (connectedDevices().length === 0) {
