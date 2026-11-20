@@ -536,6 +536,78 @@ class TacosDoradosApiTest extends TestCase
         $this->assertDatabaseMissing('order_items', ['order_id' => $orderId]);
     }
 
+    public function test_whatsapp_devices_crud_and_settings(): void
+    {
+        $token = $this->authenticate();
+
+        \Illuminate\Support\Facades\Http::fake([
+            '*/sessions' => \Illuminate\Support\Facades\Http::response(['sessions' => []], 200),
+            '*/sessions/*/start' => \Illuminate\Support\Facades\Http::response(['status' => 'QR_READY', 'qrRaw' => 'test-qr', 'qrImage' => 'data:image/png;base64,abc'], 200),
+            '*/sessions/*/qr' => \Illuminate\Support\Facades\Http::response(['status' => 'CONNECTED', 'phone' => '5213320536289'], 200),
+            '*/sessions/*' => \Illuminate\Support\Facades\Http::response(['success' => true], 200),
+        ]);
+
+        // 1. Listar dispositivos inicialmente vacío
+        $this->withToken($token)
+            ->getJson('/api/whatsapp/devices')
+            ->assertOk()
+            ->assertJsonCount(0, 'devices');
+
+        // 2. Crear primer dispositivo
+        $create1 = $this->withToken($token)
+            ->postJson('/api/whatsapp/devices', [
+                'name' => 'Línea Taquería Principal',
+            ])
+            ->assertStatus(201)
+            ->json();
+
+        $this->assertTrue($create1['device']['is_default']);
+        $deviceId1 = $create1['device']['id'];
+
+        // 3. Crear segundo dispositivo
+        $create2 = $this->withToken($token)
+            ->postJson('/api/whatsapp/devices', [
+                'name' => 'Línea Repartidores',
+            ])
+            ->assertStatus(201)
+            ->json();
+
+        $this->assertFalse($create2['device']['is_default']);
+        $deviceId2 = $create2['device']['id'];
+
+        // 4. Cambiar predeterminado al segundo dispositivo
+        $this->withToken($token)
+            ->patchJson("/api/whatsapp/devices/{$deviceId2}/default")
+            ->assertOk()
+            ->assertJsonPath('is_default', true);
+
+        $this->assertDatabaseHas('whatsapp_devices', ['id' => $deviceId1, 'is_default' => 0]);
+        $this->assertDatabaseHas('whatsapp_devices', ['id' => $deviceId2, 'is_default' => 1]);
+
+        // 5. Consultar QR (simula que se conectó en el mock)
+        $qrResp = $this->withToken($token)
+            ->getJson("/api/whatsapp/devices/{$deviceId1}/qr")
+            ->assertOk();
+
+        $this->assertEquals('CONNECTED', $qrResp->json('status'));
+        $this->assertEquals('5213320536289', $qrResp->json('phone'));
+
+        // 6. Configuración de URL de WhatsApp
+        $this->withToken($token)
+            ->putJson('/api/whatsapp/settings', [
+                'whatsapp_api_url' => 'https://custom-whatsapp.up.railway.app',
+            ])
+            ->assertOk()
+            ->assertJsonPath('whatsapp_api_url', 'https://custom-whatsapp.up.railway.app');
+
+        // 7. Eliminar dispositivo
+        $this->withToken($token)
+            ->deleteJson("/api/whatsapp/devices/{$deviceId2}")
+            ->assertOk();
+
+        $this->assertDatabaseMissing('whatsapp_devices', ['id' => $deviceId2]);
+    }
+
     private function authenticate(): string
     {
         return $this->postJson('/api/login', [

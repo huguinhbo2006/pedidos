@@ -217,3 +217,20 @@ export interface AddressSuggestion {
   source: 'google' | 'nominatim';
   placePrediction?: any;
 }
+
+export interface WhatsAppDevice {
+  id: number;
+  session_id: string;
+  name: string;
+  phone: string | null;
+  profile_name: string | null;
+  status: 'INITIALIZING' | 'QR_READY' | 'CONNECTED' | 'DISCONNECTED' | 'ERROR';
+  is_default: boolean;
+  last_connected_at: string | null;
+  created_at?: string;
+}
+
+export interface WhatsAppDevicesResponse {
+  devices: WhatsAppDevice[];
+  api_url: string;
+}

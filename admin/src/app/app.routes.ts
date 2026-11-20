@@ -7,6 +7,7 @@ import { NewOrderComponent } from './features/orders/new-order.component';
 import { CatalogComponent } from './features/catalog/catalog.component';
 import { PackagesAdminComponent } from './features/packages/packages-admin.component';
 import { CustomersComponent } from './features/customers/customers.component';
+import { WhatsappDevicesComponent } from './features/whatsapp/whatsapp-devices.component';
 import { HistoryComponent } from './features/orders/history.component';
 
 export const routes: Routes = [
@@ -27,6 +28,7 @@ export const routes: Routes = [
       { path: 'catalogo', component: CatalogComponent },
       { path: 'paquetes', component: PackagesAdminComponent },
       { path: 'clientes', component: CustomersComponent },
+      { path: 'whatsapp', component: WhatsappDevicesComponent },
       { path: 'historial', component: HistoryComponent },
     ],
   },

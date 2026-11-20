@@ -1,0 +1,368 @@
+<section class="whatsapp-page">
+  <div class="page-header">
+    <div>
+      <div class="title-with-badge">
+        <h1>Dispositivos WhatsApp</h1>
+        <span class="api-tag" title="Servidor API de WhatsApp conectado">
+          ☁️ {{ apiUrl() || 'Conectando...' }}
+        </span>
+      </div>
+      <p class="subtitle">
+        Gestiona las líneas y números de WhatsApp vinculados para la comunicación con clientes y empleados.
+      </p>
+    </div>
+
+    <div class="header-actions">
+      <button type="button" class="btn btn-outline" (click)="openSettingsModal()">
+        ⚙️ Servidor API
+      </button>
+      <button type="button" class="btn btn-outline" (click)="loadDevices()" [disabled]="loading()">
+        🔄 Actualizar
+      </button>
+      <button type="button" class="btn btn-primary btn-lg" (click)="openNewDeviceModal()">
+        ➕ Conectar Nuevo Número
+      </button>
+    </div>
+  </div>
+
+  <!-- KPI SUMMARY -->
+  <div class="kpi-row">
+    <div class="kpi-card card">
+      <span class="kpi-label">Dispositivos registrados</span>
+      <strong class="kpi-value text-primary">{{ devices().length }}</strong>
+      <small>Líneas configuradas en el sistema</small>
+    </div>
+
+    <div class="kpi-card card">
+      <span class="kpi-label">En línea y listos</span>
+      <strong class="kpi-value text-green">{{ totalConnected() }}</strong>
+      <small>{{ totalConnected() }} de {{ devices().length }} activos para envíos</small>
+    </div>
+
+    <div class="kpi-card card">
+      <span class="kpi-label">Línea predeterminada</span>
+      <strong class="kpi-value text-gold" style="font-size: 1.25rem;">
+        {{ defaultDevice()?.name || 'Ninguna asignada' }}
+      </strong>
+      <small>
+        @if (defaultDevice()?.phone) {
+          📞 {{ formatPhone(defaultDevice()?.phone) }}
+        } @else {
+          Asigna un dispositivo como principal
+        }
+      </small>
+    </div>
+  </div>
+
+  @if (loading()) {
+    <div class="empty-state card">
+      <p>Cargando dispositivos de WhatsApp...</p>
+    </div>
+  } @else if (devices().length === 0) {
+    <div class="empty-state card">
+      <div class="empty-emoji">💬</div>
+      <h2>No hay números de WhatsApp vinculados</h2>
+      <p>
+        Conecta tu primera línea para poder enviar comprobantes de pedidos, notificaciones y mensajes automáticos.
+      </p>
+      <button type="button" class="btn btn-primary btn-lg" (click)="openNewDeviceModal()">
+        ➕ Conectar Primer Número
+      </button>
+    </div>
+  } @else {
+    <div class="devices-grid">
+      @for (device of devices(); track device.id) {
+        <article class="device-card card" [class.is-default]="device.is_default">
+          <div class="card-head">
+            <div class="head-info">
+              <span class="wa-icon">💬</span>
+              <div>
+                <h3>{{ device.name }}</h3>
+                <span class="session-code">ID: {{ device.session_id }}</span>
+              </div>
+            </div>
+
+            <div class="head-badges">
+              @if (device.is_default) {
+                <span class="badge badge-default">⭐ Principal</span>
+              }
+              <span
+                class="badge"
+                [class.badge-online]="device.status === 'CONNECTED'"
+                [class.badge-offline]="device.status !== 'CONNECTED'"
+              >
+                {{ device.status === 'CONNECTED' ? '🟢 En línea' : '⚪ Desconectado' }}
+              </span>
+            </div>
+          </div>
+
+          <div class="card-body">
+            <div class="phone-box">
+              <span class="phone-label">Número vinculado:</span>
+              <strong class="phone-num">
+                {{ formatPhone(device.phone) }}
+              </strong>
+              @if (device.profile_name) {
+                <small class="profile-name">Perfil: {{ device.profile_name }}</small>
+              }
+            </div>
+
+            <div class="device-meta">
+              <span>🕒 Última conexión:</span>
+              <strong>{{ device.last_connected_at ? (device.last_connected_at | date:'medium') : 'Aún no conectado' }}</strong>
+            </div>
+          </div>
+
+          <div class="card-foot">
+            <div class="foot-left">
+              @if (!device.is_default && device.status === 'CONNECTED') {
+                <button
+                  type="button"
+                  class="btn btn-outline btn-sm"
+                  (click)="makeDefault(device)"
+                  [disabled]="isActionBusy()"
+                  title="Establecer como número de envío principal"
+                >
+                  ⭐ Hacer Principal
+                </button>
+              }
+            </div>
+
+            <div class="foot-right">
+              @if (device.status !== 'CONNECTED') {
+                <button
+                  type="button"
+                  class="btn btn-primary btn-sm"
+                  (click)="openScanQrForExisting(device)"
+                  [disabled]="isActionBusy()"
+                >
+                  📱 Conectar / Ver QR
+                </button>
+              }
+
+              <button
+                type="button"
+                class="btn btn-outline btn-sm"
+                (click)="syncDevice(device)"
+                [disabled]="isActionBusy()"
+                title="Sincronizar estado en vivo con Railway"
+              >
+                🔄
+              </button>
+
+              <button
+                type="button"
+                class="btn btn-danger-ghost btn-sm"
+                (click)="openConfirmDelete(device)"
+                [disabled]="isActionBusy()"
+                title="Desvincular y eliminar línea"
+              >
+                🗑️
+              </button>
+            </div>
+          </div>
+        </article>
+      }
+    </div>
+  }
+
+  <!-- MODAL: CONECTAR NUEVO DISPOSITIVO / ESCANEAR QR -->
+  @if (connectingModalOpen()) {
+    <div class="modal-backdrop" (click)="closeConnectingModal()">
+      <div class="modal-panel qr-modal" (click)="$event.stopPropagation()">
+        <div class="modal-head">
+          <div class="head-title">
+            <span class="icon">📱</span>
+            <div>
+              <h3>{{ activeQrDevice() ? 'Vincular WhatsApp' : 'Conectar Nuevo Dispositivo' }}</h3>
+              <p>Escanea el código QR con la app de WhatsApp</p>
+            </div>
+          </div>
+          <button type="button" class="btn-close" (click)="closeConnectingModal()">✕</button>
+        </div>
+
+        <div class="modal-body">
+          @if (!activeQrDevice()) {
+            <!-- PASO 1: ASIGNAR NOMBRE -->
+            <div class="step-form">
+              <label for="devName"><strong>Nombre o Alias para esta línea:</strong></label>
+              <input
+                id="devName"
+                type="text"
+                class="form-control"
+                [(ngModel)]="newDeviceName"
+                placeholder="Ej. Línea Pedidos 1, Atención Mostrador, Repartos"
+                (keyup.enter)="startDeviceCreation()"
+                autofocus
+              />
+              <small class="help-text">
+                Un nombre que te ayude a identificar qué celular o empleado usará este número.
+              </small>
+
+              <div class="modal-actions" style="margin-top: 1.25rem;">
+                <button type="button" class="btn btn-outline" (click)="closeConnectingModal()">
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-primary"
+                  (click)="startDeviceCreation()"
+                  [disabled]="isActionBusy() || newDeviceName().trim().length < 2"
+                >
+                  {{ isActionBusy() ? 'Generando QR...' : 'Siguiente: Generar QR →' }}
+                </button>
+              </div>
+            </div>
+          } @else {
+            <!-- PASO 2: MOSTRAR QR Y AUTO-DETECCIÓN -->
+            <div class="qr-step-wrap">
+              <div class="device-tag">
+                Dispositivo: <strong>{{ activeQrDevice()?.name }}</strong>
+              </div>
+
+              @if (activeQrStatus() === 'CONNECTED') {
+                <div class="connected-celebration">
+                  <div class="check-circle">✅</div>
+                  <h3>¡Dispositivo Vinculado con Éxito!</h3>
+                  <p>El número <strong>{{ formatPhone(activeQrPhone()) }}</strong> ya está conectado y listo para enviar mensajes.</p>
+                  <button type="button" class="btn btn-success btn-lg" (click)="closeConnectingModal()">
+                    Listo, finalizar
+                  </button>
+                </div>
+              } @else {
+                <div class="qr-box">
+                  @if (activeQrImage()) {
+                    <img [src]="activeQrImage()" alt="Código QR de WhatsApp" class="qr-code-img" />
+                    <div class="qr-pulse-badge">
+                      ⏳ Esperando escaneo con tu teléfono...
+                    </div>
+                  } @else {
+                    <div class="qr-loading-box">
+                      <div class="spinner"></div>
+                      <p>Solicitando código QR a Railway...</p>
+                    </div>
+                  }
+                </div>
+
+                <div class="scan-instructions">
+                  <h4>Cómo escanear el código:</h4>
+                  <ol>
+                    <li>Abre <strong>WhatsApp</strong> en el teléfono que vas a conectar.</li>
+                    <li>Toca <strong>Menú (⋮)</strong> en Android o <strong>Configuración (⚙️)</strong> en iPhone.</li>
+                    <li>Selecciona <strong>Dispositivos vinculados</strong> y luego <strong>Vincular un dispositivo</strong>.</li>
+                    <li>Apunta la cámara de tu teléfono a esta pantalla para escanear el código QR.</li>
+                  </ol>
+                </div>
+
+                <div class="modal-actions">
+                  <button type="button" class="btn btn-outline" (click)="closeConnectingModal()">
+                    Cerrar ventana
+                  </button>
+                </div>
+              }
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- MODAL: CONFIGURAR SERVIDOR RAILWAY -->
+  @if (settingsModalOpen()) {
+    <div class="modal-backdrop" (click)="settingsModalOpen.set(false)">
+      <div class="modal-panel" (click)="$event.stopPropagation()">
+        <div class="modal-head">
+          <div class="head-title">
+            <span class="icon">⚙️</span>
+            <div>
+              <h3>Configuración de la API de WhatsApp</h3>
+              <p>Dirección del microservicio en Railway</p>
+            </div>
+          </div>
+          <button type="button" class="btn-close" (click)="settingsModalOpen.set(false)">✕</button>
+        </div>
+
+        <div class="modal-body">
+          <div class="form-field">
+            <label for="serverUrl"><strong>URL del servidor en Railway:</strong></label>
+            <input
+              id="serverUrl"
+              type="url"
+              class="form-control"
+              [(ngModel)]="customApiUrl"
+              placeholder="https://tu-proyecto.up.railway.app"
+            />
+            <small class="help-text">
+              La dirección pública HTTPS donde está desplegado tu microservicio de Baileys.
+            </small>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" (click)="settingsModalOpen.set(false)">
+            Cancelar
+          </button>
+          <button
+            type="button"
+            class="btn btn-primary"
+            (click)="saveSettings()"
+            [disabled]="isActionBusy()"
+          >
+            {{ isActionBusy() ? 'Guardando...' : 'Guardar Configuración' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- MODAL: CONFIRMAR ELIMINACIÓN -->
+  @if (deletingDevice(); as dev) {
+    <div class="modal-backdrop" (click)="cancelConfirmDelete()">
+      <div class="modal-panel" (click)="$event.stopPropagation()">
+        <div class="modal-head delete-head">
+          <div class="head-title">
+            <div class="delete-icon">🗑️</div>
+            <div>
+              <h3 class="text-danger">Desvincular Dispositivo</h3>
+              <p>{{ dev.name }}</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-body">
+          <div class="summary-pill">
+            <div><strong>Dispositivo:</strong> {{ dev.name }}</div>
+            <div><strong>Número:</strong> {{ formatPhone(dev.phone) }}</div>
+            <div><strong>Identificador:</strong> <code>{{ dev.session_id }}</code></div>
+          </div>
+
+          <div class="alert alert-error" style="margin-top: 1rem;">
+            ⚠️ <strong>¿Deseas desvincular este dispositivo?</strong>
+            <p style="margin: 4px 0 0; font-size: 0.86rem;">
+              Se cerrará la sesión de WhatsApp en el teléfono y se borrarán sus credenciales en Railway.
+            </p>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button
+            type="button"
+            class="btn btn-outline"
+            (click)="cancelConfirmDelete()"
+            [disabled]="isActionBusy()"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            class="btn btn-danger"
+            (click)="confirmDelete()"
+            [disabled]="isActionBusy()"
+          >
+            {{ isActionBusy() ? 'Desvinculando...' : '🗑️ Sí, desvincular' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+</section>

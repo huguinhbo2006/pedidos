@@ -13,6 +13,8 @@ import {
   Product,
   Promotion,
   TodayOrdersResponse,
+  WhatsAppDevice,
+  WhatsAppDevicesResponse,
 } from '../models/api.models';
 
 export interface CreateOrderPayload {
@@ -212,5 +214,48 @@ export class ApiService {
       `${this.apiUrl}/places/fallback-search`,
       { params }
     );
+  }
+
+  // WhatsApp Devices & Multi-session management
+  getWhatsAppDevices(): Observable<WhatsAppDevicesResponse> {
+    return this.http.get<WhatsAppDevicesResponse>(`${this.apiUrl}/whatsapp/devices`);
+  }
+
+  createWhatsAppDevice(name: string): Observable<{
+    device: WhatsAppDevice;
+    status: string;
+    qrImage?: string;
+    qrRaw?: string;
+    api_url: string;
+  }> {
+    return this.http.post<any>(`${this.apiUrl}/whatsapp/devices`, { name });
+  }
+
+  getWhatsAppDeviceQr(deviceId: number): Observable<{
+    status: string;
+    phone?: string;
+    qrImage?: string;
+    qrRaw?: string;
+    device: WhatsAppDevice;
+  }> {
+    return this.http.get<any>(`${this.apiUrl}/whatsapp/devices/${deviceId}/qr`);
+  }
+
+  syncWhatsAppDevice(deviceId: number): Observable<WhatsAppDevice> {
+    return this.http.get<WhatsAppDevice>(`${this.apiUrl}/whatsapp/devices/${deviceId}/sync`);
+  }
+
+  setDefaultWhatsAppDevice(deviceId: number): Observable<WhatsAppDevice> {
+    return this.http.patch<WhatsAppDevice>(`${this.apiUrl}/whatsapp/devices/${deviceId}/default`, {});
+  }
+
+  deleteWhatsAppDevice(deviceId: number): Observable<{ message: string }> {
+    return this.http.delete<{ message: string }>(`${this.apiUrl}/whatsapp/devices/${deviceId}`);
+  }
+
+  updateWhatsAppSettings(apiUrl: string): Observable<{ message: string; whatsapp_api_url: string }> {
+    return this.http.put<{ message: string; whatsapp_api_url: string }>(`${this.apiUrl}/whatsapp/settings`, {
+      whatsapp_api_url: apiUrl,
+    });
   }
 }

@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PackageController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\PromotionController;
+use App\Http\Controllers\Api\WhatsAppDeviceController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/health', fn () => response()->json(['ok' => true, 'app' => 'Tacos Dorados API']));
@@ -60,4 +61,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/settings/maps', [MapsSettingsController::class, 'show']);
     Route::put('/settings/maps', [MapsSettingsController::class, 'update']);
     Route::get('/places/fallback-search', [MapsSettingsController::class, 'fallbackSearch']);
+
+    // WhatsApp Devices & Multi-session management
+    Route::get('/whatsapp/devices', [WhatsAppDeviceController::class, 'index']);
+    Route::post('/whatsapp/devices', [WhatsAppDeviceController::class, 'store']);
+    Route::get('/whatsapp/devices/{device}/qr', [WhatsAppDeviceController::class, 'getQr']);
+    Route::get('/whatsapp/devices/{device}/sync', [WhatsAppDeviceController::class, 'syncStatus']);
+    Route::patch('/whatsapp/devices/{device}/default', [WhatsAppDeviceController::class, 'setDefault']);
+    Route::delete('/whatsapp/devices/{device}', [WhatsAppDeviceController::class, 'destroy']);
+    Route::get('/whatsapp/settings', [WhatsAppDeviceController::class, 'getSettings']);
+    Route::put('/whatsapp/settings', [WhatsAppDeviceController::class, 'updateSettings']);
 });
