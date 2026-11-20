@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -19,7 +19,9 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
   private readonly toast = inject(ToastService);
 
   readonly loading = signal(true);
+  readonly activeTab = signal<'today' | 'upcoming'>('today');
   readonly orders = signal<Order[]>([]);
+  readonly upcomingOrders = signal<Order[]>([]);
   readonly summary = signal<TodayOrdersResponse['summary']>({
     pending_count: 0,
     delivered_count: 0,
@@ -27,11 +29,19 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
     pending_amount: 0,
     delivered_amount: 0,
     total_sales_today: 0,
+    upcoming_count: 0,
+    upcoming_amount: 0,
   });
   readonly todayDate = signal<string>('');
   readonly confirmingOrder = signal<Order | null>(null);
   readonly deliveringId = signal<number | null>(null);
+  readonly deletingOrder = signal<Order | null>(null);
+  readonly isDeleting = signal(false);
   readonly downloadingPdfId = signal<number | null>(null);
+
+  readonly displayedOrders = computed(() =>
+    this.activeTab() === 'today' ? this.orders() : this.upcomingOrders()
+  );
 
   searchTerm = '';
   private readonly search$ = new Subject<string>();
@@ -58,6 +68,7 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
     this.api.getTodayOrders(search.trim() || undefined).subscribe({
       next: (res) => {
         this.orders.set(res.orders);
+        this.upcomingOrders.set(res.upcoming_orders || []);
         this.summary.set(res.summary);
         this.todayDate.set(res.date);
         this.loading.set(false);
@@ -87,8 +98,8 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
       next: (res) => {
         this.deliveringId.set(null);
         this.confirmingOrder.set(null);
-        // Remove from main screen immediately even though it is from today
         this.orders.update((list) => list.filter((o) => o.id !== order.id));
+        this.upcomingOrders.update((list) => list.filter((o) => o.id !== order.id));
         this.summary.update((s) => ({
           ...s,
           pending_count: Math.max(0, s.pending_count - 1),
@@ -101,6 +112,42 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
       error: () => {
         this.deliveringId.set(null);
         this.toast.error('Ocurrió un error al confirmar la entrega.');
+      },
+    });
+  }
+
+  openConfirmDelete(order: Order): void {
+    this.deletingOrder.set(order);
+  }
+
+  cancelConfirmDelete(): void {
+    if (this.isDeleting()) return;
+    this.deletingOrder.set(null);
+  }
+
+  confirmDelete(): void {
+    const order = this.deletingOrder();
+    if (!order || this.isDeleting()) return;
+
+    this.isDeleting.set(true);
+    this.api.deleteOrder(order.id).subscribe({
+      next: (res) => {
+        this.isDeleting.set(false);
+        this.deletingOrder.set(null);
+        this.orders.update((list) => list.filter((o) => o.id !== order.id));
+        this.upcomingOrders.update((list) => list.filter((o) => o.id !== order.id));
+        this.summary.update((s) => ({
+          ...s,
+          pending_count: Math.max(0, s.pending_count - 1),
+          pending_amount: Math.max(0, Number((s.pending_amount - order.total).toFixed(2))),
+          total_sales_today: Math.max(0, Number((s.total_sales_today - order.total).toFixed(2))),
+          upcoming_count: Math.max(0, (s.upcoming_count ?? 1) - 1),
+        }));
+        this.toast.success(res.message || 'Pedido eliminado correctamente.');
+      },
+      error: (err) => {
+        this.isDeleting.set(false);
+        this.toast.error(err?.error?.message || 'Error al eliminar el pedido.');
       },
     });
   }
@@ -125,6 +172,18 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
       return `https://www.google.com/maps/search/?api=1&query=${order.delivery_lat},${order.delivery_lng}`;
     }
     return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.delivery_address)}`;
+  }
+
+  formatDeliveryDate(val?: string | null): string {
+    if (!val) return 'Hoy';
+    const dateOnly = val.substring(0, 10);
+    const today = this.todayDate();
+    if (today && dateOnly === today) return 'Hoy';
+    const parts = dateOnly.split('-');
+    if (parts.length === 3) {
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+    return dateOnly;
   }
 
   formatDeliveryTime(val?: string | null): string {

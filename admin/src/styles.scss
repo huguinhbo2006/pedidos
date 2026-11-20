@@ -129,6 +129,17 @@ a {
     }
   }
 
+  &-danger {
+    background: var(--brand-danger);
+    color: #fff;
+    box-shadow: 0 3px 10px rgba(220, 38, 38, 0.22);
+
+    &:hover:not(:disabled) {
+      background: #b91c1c;
+      transform: translateY(-1px);
+    }
+  }
+
   &-sm {
     padding: 0.4rem 0.75rem;
     font-size: 0.82rem;

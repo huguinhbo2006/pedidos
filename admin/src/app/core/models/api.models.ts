@@ -156,6 +156,7 @@ export interface Order {
   customer_phone: string;
   delivery_address: string;
   delivery_references: string | null;
+  delivery_date?: string | null;
   delivery_time?: string | null;
   delivery_place_id: string | null;
   delivery_lat: number | null;
@@ -186,6 +187,7 @@ export interface Order {
 export interface TodayOrdersResponse {
   date: string;
   orders: Order[];
+  upcoming_orders?: Order[];
   summary: {
     pending_count: number;
     delivered_count: number;
@@ -193,6 +195,8 @@ export interface TodayOrdersResponse {
     pending_amount: number;
     delivered_amount: number;
     total_sales_today: number;
+    upcoming_count?: number;
+    upcoming_amount?: number;
   };
 }
 

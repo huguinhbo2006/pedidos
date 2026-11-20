@@ -16,6 +16,7 @@ class Order extends Model
         'customer_phone',
         'delivery_address',
         'delivery_references',
+        'delivery_date',
         'delivery_time',
         'delivery_place_id',
         'delivery_lat',
@@ -38,6 +39,7 @@ class Order extends Model
     protected function casts(): array
     {
         return [
+            'delivery_date' => 'date:Y-m-d',
             'delivery_lat' => 'float',
             'delivery_lng' => 'float',
             'subtotal' => 'float',

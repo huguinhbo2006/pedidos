@@ -456,6 +456,86 @@ class TacosDoradosApiTest extends TestCase
         $this->assertStringStartsWith('%PDF-', $pdfResp->getContent());
     }
 
+    public function test_order_scheduled_delivery_date_upcoming_filter_update_and_destroy(): void
+    {
+        $token = $this->authenticate();
+        $tacoPapa = Product::where('name', 'Taco Dorado Normal de Papa (Con salsa, col y chile)')->firstOrFail();
+
+        $tomorrow = \Carbon\Carbon::tomorrow()->toDateString();
+
+        // 1. Crear un pedido programado para mañana
+        $createResp = $this->withToken($token)
+            ->postJson('/api/orders', [
+                'customer_phone' => '3399887766',
+                'customer_name' => 'Roberto Gómez',
+                'delivery_address' => 'Av. Hidalgo 450',
+                'delivery_date' => $tomorrow,
+                'delivery_time' => '15:00',
+                'items' => [
+                    [
+                        'item_type' => 'product',
+                        'product_id' => $tacoPapa->id,
+                        'quantity' => 20,
+                        'is_promo' => false,
+                    ],
+                ],
+            ])
+            ->assertStatus(201);
+
+        $orderId = $createResp->json('id');
+        $this->assertEquals($tomorrow, $createResp->json('delivery_date'));
+        $this->assertEquals(20 * $tacoPapa->price, $createResp->json('total'));
+
+        // 2. Verificar que en /api/orders/today NO aparece como pendiente de hoy, sino en upcoming_orders
+        $todayResp = $this->withToken($token)
+            ->getJson('/api/orders/today')
+            ->assertOk();
+
+        $this->assertEmpty(collect($todayResp->json('orders'))->where('id', $orderId));
+        $this->assertNotEmpty(collect($todayResp->json('upcoming_orders'))->where('id', $orderId));
+        $this->assertEquals(1, $todayResp->json('summary.upcoming_count'));
+
+        // 3. Verificar endpoint dedicado /api/orders/upcoming
+        $upcomingResp = $this->withToken($token)
+            ->getJson('/api/orders/upcoming')
+            ->assertOk();
+        $this->assertCount(1, $upcomingResp->json());
+        $this->assertEquals($orderId, $upcomingResp->json('0.id'));
+
+        // 4. Modificar el pedido (cambiar cantidad a 30, cambiar hora a 16:00 y cambiar dirección)
+        $updateResp = $this->withToken($token)
+            ->putJson("/api/orders/{$orderId}", [
+                'customer_phone' => '3399887766',
+                'customer_name' => 'Roberto Gómez Editado',
+                'delivery_address' => 'Av. Hidalgo 500 Interior 2',
+                'delivery_date' => $tomorrow,
+                'delivery_time' => '16:00',
+                'items' => [
+                    [
+                        'item_type' => 'product',
+                        'product_id' => $tacoPapa->id,
+                        'quantity' => 30,
+                        'is_promo' => false,
+                    ],
+                ],
+            ])
+            ->assertOk();
+
+        $this->assertEquals('Roberto Gómez Editado', $updateResp->json('customer_name'));
+        $this->assertEquals('Av. Hidalgo 500 Interior 2', $updateResp->json('delivery_address'));
+        $this->assertEquals('16:00', $updateResp->json('delivery_time'));
+        $this->assertEquals(30 * $tacoPapa->price, $updateResp->json('total'));
+
+        // 5. Eliminar el pedido con confirmación (DELETE)
+        $deleteResp = $this->withToken($token)
+            ->deleteJson("/api/orders/{$orderId}")
+            ->assertOk();
+
+        $this->assertStringContainsString('eliminado correctamente', $deleteResp->json('message'));
+        $this->assertDatabaseMissing('orders', ['id' => $orderId]);
+        $this->assertDatabaseMissing('order_items', ['order_id' => $orderId]);
+    }
+
     private function authenticate(): string
     {
         return $this->postJson('/api/login', [

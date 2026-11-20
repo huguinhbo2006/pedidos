@@ -1,7 +1,7 @@
 import { Component, OnDestroy, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subject, Subscription, debounceTime, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
@@ -59,6 +59,14 @@ export class NewOrderComponent implements OnInit, OnDestroy {
   private readonly api = inject(ApiService);
   private readonly toast = inject(ToastService);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
+
+  readonly editOrderId = signal<number | null>(null);
+  readonly editingOrderNumber = signal<string | null>(null);
+
+  readonly todayIso = this.computeIsoDate(0);
+  readonly tomorrowIso = this.computeIsoDate(1);
+  readonly deliveryDate = signal<string>(this.computeIsoDate(0));
 
   // Customer fields
   customerPhone = '';
@@ -295,6 +303,15 @@ export class NewOrderComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.loadCatalog();
 
+    const paramId = this.route.snapshot.paramMap.get('id');
+    if (paramId) {
+      const id = Number(paramId);
+      if (!isNaN(id) && id > 0) {
+        this.editOrderId.set(id);
+        this.loadOrderForEditing(id);
+      }
+    }
+
     this.sub = this.phoneInput$
       .pipe(
         debounceTime(260),
@@ -402,6 +419,89 @@ export class NewOrderComponent implements OnInit, OnDestroy {
     return raw ? this.formatDeliveryTime(raw) : 'Hora por definir';
   }
 
+  readonly formattedDeliveryDate = computed(() => {
+    const val = this.deliveryDate();
+    if (!val) return 'Hoy';
+    if (val === this.todayIso) return 'Hoy';
+    if (val === this.tomorrowIso) return 'Mañana';
+    const parts = val.split('-');
+    if (parts.length === 3) {
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+    return val;
+  });
+
+  setDeliveryDate(dateStr: string): void {
+    if (!dateStr) return;
+    this.deliveryDate.set(dateStr);
+    if (dateStr > this.todayIso && this.deliveryTimeMode() === 'asap') {
+      this.deliveryTimeMode.set('scheduled');
+      if (!this.scheduledDeliveryTime()) {
+        this.scheduledDeliveryTime.set('14:00');
+      }
+    }
+  }
+
+  loadOrderForEditing(id: number): void {
+    this.api.getOrder(id).subscribe({
+      next: (order) => {
+        this.editingOrderNumber.set(order.order_number);
+        this.customerPhone = order.customer_phone;
+        this.customerName = order.customer_name;
+        if (order.delivery_date) {
+          this.deliveryDate.set(order.delivery_date.substring(0, 10));
+        }
+        if (order.delivery_time && order.delivery_time !== 'Lo antes posible') {
+          this.deliveryTimeMode.set('scheduled');
+          this.scheduledDeliveryTime.set(order.delivery_time);
+        } else {
+          this.deliveryTimeMode.set('asap');
+        }
+
+        this.useNewAddress.set(false);
+        this.newAddressText = order.delivery_address;
+        this.newAddressReferences = order.delivery_references || '';
+        this.newAddressPlaceId = order.delivery_place_id;
+        this.newAddressLat = order.delivery_lat;
+        this.newAddressLng = order.delivery_lng;
+        this.selectedAddressId.set(order.customer_address_id);
+        this.savedAddressReferences = order.delivery_references || '';
+        this.orderNotes = order.notes || '';
+
+        if (order.manual_discount_type) {
+          this.manualDiscountType.set(order.manual_discount_type);
+          this.manualDiscountValue.set(order.manual_discount_value || 0);
+          this.manualDiscountReason.set(order.manual_discount_reason || '');
+        }
+
+        if (order.applied_promotions?.length) {
+          this.selectedDiscountPromoIds.set(order.applied_promotions.map((p) => p.promotion_id));
+        }
+
+        if (order.items?.length) {
+          const lines: CartLine[] = order.items.map((item) => ({
+            uid: `line_${this.uidCounter++}`,
+            item_type: (item.item_type as any) || (item.package_id ? 'package' : item.product_id ? 'product' : 'promo_custom'),
+            product_id: item.product_id,
+            package_id: item.package_id || null,
+            promotion_id: item.promotion_id || null,
+            product_name: item.product_name,
+            unit_price: Number(item.unit_price) || 0,
+            quantity: item.quantity,
+            is_promo: item.is_promo,
+            promo_reason: item.promo_reason || '',
+            package_details: item.package_details || null,
+          }));
+          this.cart.set(lines);
+        }
+      },
+      error: () => {
+        this.toast.error('No se pudo cargar el pedido para edición.');
+        void this.router.navigate(['/pedidos']);
+      },
+    });
+  }
+
   setDeliveryTimeMode(mode: 'asap' | 'scheduled'): void {
     this.deliveryTimeMode.set(mode);
     if (mode === 'scheduled' && !this.scheduledDeliveryTime().trim()) {
@@ -419,6 +519,15 @@ export class NewOrderComponent implements OnInit, OnDestroy {
     const hh = String(dt.getHours()).padStart(2, '0');
     const mm = String(dt.getMinutes()).padStart(2, '0');
     return `${hh}:${mm}`;
+  }
+
+  private computeIsoDate(offsetDays: number): string {
+    const d = new Date();
+    d.setDate(d.getDate() + offsetDays);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
   }
 
   formatDeliveryTime(val?: string | null): string {
@@ -936,67 +1045,74 @@ export class NewOrderComponent implements OnInit, OnDestroy {
 
     this.submitting.set(true);
 
-    this.api
-      .createOrder({
-        customer_phone: this.customerPhone.trim(),
-        customer_name: this.customerName.trim(),
-        customer_address_id: usingSaved ? savedAddr.id : null,
-        delivery_address: deliveryAddress,
-        delivery_references: usingSaved
-          ? this.savedAddressReferences.trim() || null
-          : this.newAddressReferences.trim() || null,
-        delivery_time: this.activeDeliveryTimeLabel,
-        delivery_place_id: usingSaved ? savedAddr.place_id : this.newAddressPlaceId,
-        delivery_lat: usingSaved ? savedAddr.latitude : this.newAddressLat,
-        delivery_lng: usingSaved ? savedAddr.longitude : this.newAddressLng,
-        address_label: usingSaved ? savedAddr.label : this.newAddressLabel.trim() || null,
-        notes: this.orderNotes.trim() || null,
-        applied_promotion_ids: this.selectedQualifyingDiscounts().map((q) => q.promo.id),
-        manual_discount_type: this.manualDiscountAmount() > 0 ? this.manualDiscountType() : null,
-        manual_discount_value: this.manualDiscountAmount() > 0 ? this.manualDiscountValue() : null,
-        manual_discount_reason:
-          this.manualDiscountAmount() > 0 ? this.manualDiscountReason().trim() || null : null,
-        items: this.cart().map((item) => ({
-          item_type: item.item_type,
-          product_id: item.product_id,
-          package_id: item.package_id,
-          promotion_id: item.promotion_id ?? null,
-          product_name: item.item_type === 'promo_custom' ? item.product_name : undefined,
-          quantity: item.quantity,
-          is_promo: item.is_promo,
-          promo_reason: item.is_promo ? item.promo_reason.trim() || 'Regalo / Promoción' : null,
-          package_details: item.package_details ?? null,
-        })),
-      })
-      .subscribe({
-        next: (order) => {
-          this.submitting.set(false);
-          this.toast.success(`Pedido ${order.order_number} registrado (${this.formatCurrency(order.total)}).`);
-          if (openPdfAfter) {
-            this.api.downloadOrderPdf(order.id).subscribe({
-              next: (blob) => {
-                const url = URL.createObjectURL(blob);
-                window.open(url, '_blank');
-                void this.router.navigate(['/pedidos']);
-              },
-              error: () => void this.router.navigate(['/pedidos']),
-            });
-          } else {
-            void this.router.navigate(['/pedidos']);
-          }
-        },
-        error: (err) => {
-          this.submitting.set(false);
-          const firstValidation = err?.error?.errors
-            ? Object.values(err.error.errors).flat()[0]
-            : null;
-          this.formError.set(
-            (firstValidation as string) ||
-              err?.error?.message ||
-              'No se pudo guardar el pedido. Revisa los datos.'
-          );
-        },
-      });
+    const payload = {
+      customer_phone: this.customerPhone.trim(),
+      customer_name: this.customerName.trim(),
+      customer_address_id: usingSaved ? savedAddr.id : null,
+      delivery_address: deliveryAddress,
+      delivery_references: usingSaved
+        ? this.savedAddressReferences.trim() || null
+        : this.newAddressReferences.trim() || null,
+      delivery_date: this.deliveryDate(),
+      delivery_time: this.activeDeliveryTimeLabel,
+      delivery_place_id: usingSaved ? savedAddr.place_id : this.newAddressPlaceId,
+      delivery_lat: usingSaved ? savedAddr.latitude : this.newAddressLat,
+      delivery_lng: usingSaved ? savedAddr.longitude : this.newAddressLng,
+      address_label: usingSaved ? savedAddr.label : this.newAddressLabel.trim() || null,
+      notes: this.orderNotes.trim() || null,
+      applied_promotion_ids: this.selectedQualifyingDiscounts().map((q) => q.promo.id),
+      manual_discount_type: this.manualDiscountAmount() > 0 ? this.manualDiscountType() : null,
+      manual_discount_value: this.manualDiscountAmount() > 0 ? this.manualDiscountValue() : null,
+      manual_discount_reason:
+        this.manualDiscountAmount() > 0 ? this.manualDiscountReason().trim() || null : null,
+      items: this.cart().map((item) => ({
+        item_type: item.item_type,
+        product_id: item.product_id,
+        package_id: item.package_id,
+        promotion_id: item.promotion_id ?? null,
+        product_name: item.item_type === 'promo_custom' ? item.product_name : undefined,
+        quantity: item.quantity,
+        is_promo: item.is_promo,
+        promo_reason: item.is_promo ? item.promo_reason.trim() || 'Regalo / Promoción' : null,
+        package_details: item.package_details ?? null,
+      })),
+    };
+
+    const isEdit = this.editOrderId() !== null;
+    const request$ = isEdit
+      ? this.api.updateOrder(this.editOrderId()!, payload)
+      : this.api.createOrder(payload);
+
+    request$.subscribe({
+      next: (order) => {
+        this.submitting.set(false);
+        const actionWord = isEdit ? 'modificado' : 'registrado';
+        this.toast.success(`Pedido ${order.order_number} ${actionWord} (${this.formatCurrency(order.total)}).`);
+        if (openPdfAfter) {
+          this.api.downloadOrderPdf(order.id).subscribe({
+            next: (blob) => {
+              const url = URL.createObjectURL(blob);
+              window.open(url, '_blank');
+              void this.router.navigate(['/pedidos']);
+            },
+            error: () => void this.router.navigate(['/pedidos']),
+          });
+        } else {
+          void this.router.navigate(['/pedidos']);
+        }
+      },
+      error: (err) => {
+        this.submitting.set(false);
+        const firstValidation = err?.error?.errors
+          ? Object.values(err.error.errors).flat()[0]
+          : null;
+        this.formError.set(
+          (firstValidation as string) ||
+            err?.error?.message ||
+            'No se pudo guardar el pedido. Revisa los datos.'
+        );
+      },
+    });
   }
 
   formatCurrency(amount: number): string {

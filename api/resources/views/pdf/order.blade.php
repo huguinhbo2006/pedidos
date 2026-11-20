@@ -209,8 +209,14 @@
       <div style="margin-top: 3px;"><strong>Referencias:</strong> {{ $order->delivery_references }}</div>
     @endif
     <div style="margin-top: 4px;">
-      <strong>Hora de entrega:</strong>
-      <span style="color: #c84b24; font-weight: bold;">{{ $order->delivery_time ?: 'Lo antes posible' }}</span>
+      <strong>Entrega programada:</strong>
+      <span style="color: #c84b24; font-weight: bold;">
+        @if($order->delivery_date)
+          {{ \Carbon\Carbon::parse($order->delivery_date)->format('d/m/Y') }} · {{ $order->delivery_time ?: 'Lo antes posible' }}
+        @else
+          {{ $order->delivery_time ?: 'Lo antes posible' }}
+        @endif
+      </span>
     </div>
   </div>
 

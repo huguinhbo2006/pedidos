@@ -1,6 +1,7 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { Order } from '../../core/models/api.models';
@@ -8,7 +9,7 @@ import { Order } from '../../core/models/api.models';
 @Component({
   selector: 'app-history',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterLink],
   template: `
     <section class="history-page">
       <div class="page-header">
@@ -59,7 +60,7 @@ import { Order } from '../../core/models/api.models';
               <div class="hist-top">
                 <div class="folio-wrap">
                   <strong>{{ order.order_number }}</strong>
-                  <span>{{ order.created_at | date:'medium' }}</span>
+                  <span>Capturado: {{ order.created_at | date:'medium' }}</span>
                 </div>
                 <span class="badge" [class.badge-delivered]="order.is_delivered" [class.badge-pending]="!order.is_delivered">
                   {{ order.is_delivered ? '✅ Entregado' : '⏳ Pendiente' }}
@@ -69,7 +70,12 @@ import { Order } from '../../core/models/api.models';
               <div class="hist-mid">
                 <div><strong>Cliente:</strong> {{ order.customer_name }} ({{ order.customer_phone }})</div>
                 <div><strong>Domicilio:</strong> {{ order.delivery_address }}</div>
-                <div><strong>Hora de entrega:</strong> {{ formatDeliveryTime(order.delivery_time) }}</div>
+                <div>
+                  <strong>Entrega programada:</strong>
+                  <span class="delivery-time-tag">
+                    📅 {{ formatDeliveryDate(order.delivery_date) }} &nbsp;·&nbsp; ⏰ {{ formatDeliveryTime(order.delivery_time) }}
+                  </span>
+                </div>
                 <div class="items-inline">
                   @for (item of order.items; track item.id ?? $index) {
                     <span class="item-chip" [class.promo]="item.is_promo">
@@ -96,6 +102,15 @@ import { Order } from '../../core/models/api.models';
                   @if (order.delivered_at) {
                     <small class="delivered-at">Entregado: {{ order.delivered_at | date:'short' }}</small>
                   }
+
+                  <a
+                    [routerLink]="['/pedidos/editar', order.id]"
+                    class="btn btn-outline btn-sm"
+                    title="Modificar pedido"
+                  >
+                    ✏️ Modificar
+                  </a>
+
                   <button
                     type="button"
                     class="btn btn-outline btn-sm"
@@ -104,10 +119,69 @@ import { Order } from '../../core/models/api.models';
                   >
                     {{ downloadingPdfId() === order.id ? 'PDF...' : '📄 PDF' }}
                   </button>
+
+                  <button
+                    type="button"
+                    class="btn btn-danger-ghost btn-sm"
+                    (click)="openConfirmDelete(order)"
+                    title="Eliminar pedido definitivamente"
+                  >
+                    🗑️
+                  </button>
                 </div>
               </div>
             </article>
           }
+        </div>
+      }
+
+      <!-- MODAL CONFIRM DELETE -->
+      @if (deletingOrder(); as order) {
+        <div class="modal-backdrop" (click)="cancelConfirmDelete()">
+          <div class="modal-panel delete-panel" (click)="$event.stopPropagation()">
+            <div class="confirm-head delete-head">
+              <div class="delete-circle">🗑️</div>
+              <div>
+                <h3 class="text-danger">Eliminar Pedido</h3>
+                <p>Folio <strong>{{ order.order_number }}</strong></p>
+              </div>
+            </div>
+
+            <div class="confirm-body">
+              <div class="summary-pill delete-pill">
+                <div><strong>Cliente:</strong> {{ order.customer_name }} ({{ order.customer_phone }})</div>
+                <div><strong>Domicilio:</strong> {{ order.delivery_address }}</div>
+                <div><strong>Fecha de entrega:</strong> {{ formatDeliveryDate(order.delivery_date) }} · {{ formatDeliveryTime(order.delivery_time) }}</div>
+                <div><strong>Total del pedido:</strong> {{ formatCurrency(order.total) }}</div>
+              </div>
+
+              <div class="alert alert-error" style="margin: 0;">
+                ⚠️ <strong>¿Confirmas que deseas eliminar este pedido permanentemente?</strong>
+                <p style="margin: 4px 0 0; font-size: 0.86rem;">
+                  Esta acción es irreversible y eliminará el pedido y sus conceptos de la base de datos.
+                </p>
+              </div>
+            </div>
+
+            <div class="confirm-actions">
+              <button
+                type="button"
+                class="btn btn-outline"
+                (click)="cancelConfirmDelete()"
+                [disabled]="isDeleting()"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                class="btn btn-danger"
+                (click)="confirmDelete()"
+                [disabled]="isDeleting()"
+              >
+                {{ isDeleting() ? 'Eliminando...' : '🗑️ Sí, eliminar pedido' }}
+              </button>
+            </div>
+          </div>
         </div>
       }
     </section>
@@ -138,35 +212,43 @@ import { Order } from '../../core/models/api.models';
       display: flex;
       justify-content: space-between;
       align-items: center;
-      flex-wrap: wrap;
-      gap: 0.5rem;
       .folio-wrap {
         display: flex;
-        align-items: center;
         gap: 0.65rem;
-        span { font-size: 0.82rem; color: var(--text-muted); }
+        align-items: baseline;
+        strong { font-size: 1.05rem; color: var(--brand-primary); }
+        span { font-size: 0.8rem; color: var(--text-muted); }
       }
     }
     .hist-mid {
       display: flex;
       flex-direction: column;
-      gap: 0.3rem;
-      font-size: 0.88rem;
+      gap: 0.35rem;
+      font-size: 0.9rem;
+    }
+    .delivery-time-tag {
+      display: inline-block;
+      margin-left: 0.3rem;
+      background: var(--bg-gold-soft);
+      color: #9a5406;
+      font-weight: 700;
+      padding: 0.15rem 0.5rem;
+      border-radius: var(--radius-sm);
     }
     .items-inline {
       display: flex;
       flex-wrap: wrap;
-      gap: 0.4rem;
+      gap: 0.35rem;
       margin-top: 0.25rem;
       .item-chip {
-        font-size: 0.78rem;
         background: var(--bg-subtle);
         padding: 0.2rem 0.55rem;
         border-radius: 999px;
-        font-weight: 600;
+        font-size: 0.8rem;
         &.promo {
-          background: var(--bg-gold-soft);
-          color: #92400e;
+          background: var(--bg-green-soft);
+          color: var(--brand-green);
+          font-weight: 600;
         }
       }
     }
@@ -174,29 +256,105 @@ import { Order } from '../../core/models/api.models';
       display: flex;
       justify-content: space-between;
       align-items: center;
-      border-top: 1px solid var(--border-light);
-      padding-top: 0.55rem;
-      .total-wrap { display: flex; flex-direction: column; gap: 0.1rem; }
-      .total { font-size: 1.1rem; font-weight: 800; color: var(--brand-primary); }
-      .discount-tag { font-size: 0.74rem; color: var(--brand-green); font-weight: 700; }
-      .foot-right { display: flex; align-items: center; gap: 0.65rem; }
-      .delivered-at { font-size: 0.78rem; color: var(--brand-green); font-weight: 600; }
+      border-top: 1px dashed var(--border-light);
+      padding-top: 0.65rem;
+      margin-top: 0.2rem;
     }
+    .total-wrap {
+      display: flex;
+      flex-direction: column;
+      .total { font-size: 1.15rem; font-weight: 800; }
+      .discount-tag { font-size: 0.76rem; color: var(--brand-green); font-weight: 600; }
+    }
+    .foot-right {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      .delivered-at { font-size: 0.8rem; color: var(--text-muted); }
+    }
+    .badge-delivered { background: var(--bg-green-soft); color: var(--brand-green); }
+    .badge-pending { background: #fff3db; color: #9a5406; }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(31, 23, 18, 0.45);
+      backdrop-filter: blur(2px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 1rem;
+    }
+    .modal-panel {
+      background: var(--bg-surface);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-lg);
+      width: 100%;
+      max-width: 480px;
+      overflow: hidden;
+    }
+    .confirm-head {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      padding: 1.15rem 1.35rem;
+      border-bottom: 1px solid var(--border-light);
+      h3 { margin: 0; font-size: 1.12rem; }
+      p { margin: 0.15rem 0 0; font-size: 0.86rem; color: var(--text-secondary); }
+    }
+    .delete-circle {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: #fef2f2;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.35rem;
+    }
+    .confirm-body {
+      padding: 1.2rem 1.35rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.9rem;
+    }
+    .summary-pill {
+      background: var(--bg-subtle);
+      border-radius: var(--radius-sm);
+      padding: 0.75rem 0.9rem;
+      font-size: 0.88rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+    }
+    .confirm-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.65rem;
+      padding: 0.95rem 1.35rem;
+      background: var(--bg-canvas);
+      border-top: 1px solid var(--border-light);
+    }
+    .text-danger { color: var(--brand-danger); }
   `],
 })
 export class HistoryComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly toast = inject(ToastService);
 
-  readonly orders = signal<Order[]>([]);
   readonly loading = signal(true);
+  readonly orders = signal<Order[]>([]);
   readonly downloadingPdfId = signal<number | null>(null);
+  readonly deletingOrder = signal<Order | null>(null);
+  readonly isDeleting = signal(false);
 
-  dateFilter = this.todayIso();
+  dateFilter = '';
   statusFilter: 'all' | 'pending' | 'delivered' = 'all';
   searchFilter = '';
 
   ngOnInit(): void {
+    this.dateFilter = this.todayIso();
     this.loadOrders();
   }
 
@@ -231,6 +389,44 @@ export class HistoryComponent implements OnInit {
           this.toast.error('No se pudo cargar el historial.');
         },
       });
+  }
+
+  openConfirmDelete(order: Order): void {
+    this.deletingOrder.set(order);
+  }
+
+  cancelConfirmDelete(): void {
+    if (this.isDeleting()) return;
+    this.deletingOrder.set(null);
+  }
+
+  confirmDelete(): void {
+    const order = this.deletingOrder();
+    if (!order || this.isDeleting()) return;
+
+    this.isDeleting.set(true);
+    this.api.deleteOrder(order.id).subscribe({
+      next: (res) => {
+        this.isDeleting.set(false);
+        this.deletingOrder.set(null);
+        this.orders.update((list) => list.filter((o) => o.id !== order.id));
+        this.toast.success(res.message || 'Pedido eliminado correctamente.');
+      },
+      error: (err) => {
+        this.isDeleting.set(false);
+        this.toast.error(err?.error?.message || 'Error al eliminar el pedido.');
+      },
+    });
+  }
+
+  formatDeliveryDate(val?: string | null): string {
+    if (!val) return 'Hoy';
+    const dateOnly = val.substring(0, 10);
+    const parts = dateOnly.split('-');
+    if (parts.length === 3) {
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+    return dateOnly;
   }
 
   formatPkgDetails(details: Array<{ label: string; quantity: number }>): string {

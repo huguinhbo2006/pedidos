@@ -3,7 +3,7 @@
     <div>
       <h1>Pedidos del Día</h1>
       <p class="subtitle">
-        Solo se muestran los pedidos pendientes por entregar de hoy
+        Gestiona los pedidos de hoy y los agendados para fechas próximas
         @if (todayDate()) {
           <span class="date-chip">📅 {{ todayDate() }}</span>
         }
@@ -21,14 +21,20 @@
   </div>
 
   <div class="kpi-row">
-    <div class="kpi-card card">
+    <div class="kpi-card card" (click)="activeTab.set('today')" style="cursor: pointer;" [class.active-border]="activeTab() === 'today'">
       <span class="kpi-label">Pendientes hoy</span>
       <strong class="kpi-value text-primary">{{ summary().pending_count }}</strong>
       <small>{{ formatCurrency(summary().pending_amount) }} por cobrar</small>
     </div>
 
+    <div class="kpi-card card" (click)="activeTab.set('upcoming')" style="cursor: pointer;" [class.active-border]="activeTab() === 'upcoming'">
+      <span class="kpi-label">📅 Próximos programados</span>
+      <strong class="kpi-value text-gold">{{ summary().upcoming_count ?? upcomingOrders().length }}</strong>
+      <small>{{ formatCurrency(summary().upcoming_amount ?? 0) }} en fechas futuras</small>
+    </div>
+
     <a routerLink="/historial" class="kpi-card card kpi-link" title="Ver pedidos entregados en historial">
-      <span class="kpi-label">Entregados hoy (ocultos aquí)</span>
+      <span class="kpi-label">Entregados hoy</span>
       <strong class="kpi-value text-green">{{ summary().delivered_count }}</strong>
       <small>{{ formatCurrency(summary().delivered_amount) }} entregados · Ver historial ↗</small>
     </a>
@@ -36,7 +42,7 @@
     <div class="kpi-card card">
       <span class="kpi-label">Venta total del día</span>
       <strong class="kpi-value">{{ formatCurrency(summary().total_sales_today) }}</strong>
-      <small>{{ summary().total_orders_today }} pedidos registrados hoy</small>
+      <small>{{ summary().total_orders_today }} pedidos hoy</small>
     </div>
   </div>
 
@@ -47,7 +53,7 @@
         type="text"
         [ngModel]="searchTerm"
         (ngModelChange)="onSearchChange($event)"
-        placeholder="Buscar por folio, nombre del cliente, celular o domicilio..."
+        placeholder="Buscar por folio, cliente, celular o domicilio..."
       />
       @if (searchTerm) {
         <button type="button" class="clear-btn" (click)="onSearchChange('')">Limpiar</button>
@@ -55,19 +61,40 @@
     </div>
   </div>
 
+  <div class="tabs-row">
+    <button
+      type="button"
+      class="tab-btn"
+      [class.active]="activeTab() === 'today'"
+      (click)="activeTab.set('today')"
+    >
+      🌮 Pedidos de Hoy ({{ orders().length }})
+    </button>
+    <button
+      type="button"
+      class="tab-btn"
+      [class.active]="activeTab() === 'upcoming'"
+      (click)="activeTab.set('upcoming')"
+    >
+      📅 Próximos Programados ({{ upcomingOrders().length }})
+    </button>
+  </div>
+
   @if (loading()) {
     <div class="empty-state card">
-      <p>Cargando pedidos pendientes de hoy...</p>
+      <p>Cargando pedidos...</p>
     </div>
-  } @else if (orders().length === 0) {
+  } @else if (displayedOrders().length === 0) {
     <div class="empty-state card">
-      <div class="empty-emoji">🌮</div>
-      <h2>No hay pedidos pendientes por entregar</h2>
+      <div class="empty-emoji">{{ activeTab() === 'today' ? '🌮' : '📅' }}</div>
+      <h2>{{ activeTab() === 'today' ? 'No hay pedidos pendientes para hoy' : 'No hay pedidos programados para próximos días' }}</h2>
       <p>
         @if (searchTerm) {
-          No se encontraron pedidos pendientes que coincidan con "{{ searchTerm }}".
-        } @else {
+          No se encontraron pedidos que coincidan con "{{ searchTerm }}".
+        } @else if (activeTab() === 'today') {
           Todos los pedidos de hoy ya fueron entregados o aún no registras uno nuevo.
+        } @else {
+          No hay pedidos agendados para fechas futuras en este momento.
         }
       </p>
       <a routerLink="/pedidos/nuevo" class="btn btn-primary">
@@ -76,12 +103,12 @@
     </div>
   } @else {
     <div class="orders-grid">
-      @for (order of orders(); track order.id) {
+      @for (order of displayedOrders(); track order.id) {
         <article class="order-card card">
           <div class="order-card-head">
             <div class="order-id-block">
               <span class="folio">{{ order.order_number }}</span>
-              <span class="time">🕒 {{ order.created_at | date:'shortTime' }}</span>
+              <span class="time">🕒 Capturado {{ order.created_at | date:'shortTime' }}</span>
             </div>
             <span class="badge badge-pending">⏳ Pendiente</span>
           </div>
@@ -91,8 +118,8 @@
             <div class="customer-phone">📞 {{ order.customer_phone }}</div>
           </div>
 
-          <div class="delivery-time-pill" [class.scheduled]="!!order.delivery_time && order.delivery_time !== 'Lo antes posible'">
-            ⏰ <strong>Hora de entrega:</strong> {{ formatDeliveryTime(order.delivery_time) }}
+          <div class="delivery-time-pill scheduled">
+            📅 <strong>Entrega:</strong> {{ formatDeliveryDate(order.delivery_date) }} &nbsp;·&nbsp; ⏰ <strong>Hora:</strong> {{ formatDeliveryTime(order.delivery_time) }}
           </div>
 
           <div class="address-box">
@@ -188,6 +215,23 @@
                 {{ downloadingPdfId() === order.id ? 'PDF...' : '📄 PDF' }}
               </button>
 
+              <a
+                [routerLink]="['/pedidos/editar', order.id]"
+                class="btn btn-outline btn-sm"
+                title="Modificar datos, productos o dirección"
+              >
+                ✏️ Modificar
+              </a>
+
+              <button
+                type="button"
+                class="btn btn-danger-ghost btn-sm"
+                (click)="openConfirmDelete(order)"
+                title="Eliminar pedido definitivamente"
+              >
+                🗑️
+              </button>
+
               <button
                 type="button"
                 class="btn btn-success delivered-flag-btn"
@@ -202,6 +246,7 @@
     </div>
   }
 
+  <!-- MODAL: CONFIRMAR ENTREGA -->
   @if (confirmingOrder(); as order) {
     <div class="modal-backdrop" (click)="cancelConfirmDeliver()">
       <div class="modal-panel" (click)="$event.stopPropagation()">
@@ -217,12 +262,12 @@
           <div class="summary-pill">
             <div><strong>Cliente:</strong> {{ order.customer_name }} ({{ order.customer_phone }})</div>
             <div><strong>Domicilio:</strong> {{ order.delivery_address }}</div>
-            <div><strong>Total del pedido:</strong> {{ formatCurrency(order.total) }}</div>
+            <div><strong>Fecha de entrega:</strong> {{ formatDeliveryDate(order.delivery_date) }} · {{ formatDeliveryTime(order.delivery_time) }}</div>
+            <div><strong>Total a cobrar:</strong> {{ formatCurrency(order.total) }}</div>
           </div>
 
           <p class="confirm-question">
-            ¿Confirmas que este pedido ya fue entregado? Al confirmar,
-            <strong>dejará de mostrarse en la pantalla principal aunque sea de hoy</strong>.
+            ¿Confirmas que este pedido ya fue entregado al cliente?
           </p>
         </div>
 
@@ -242,6 +287,56 @@
             [disabled]="deliveringId() !== null"
           >
             {{ deliveringId() !== null ? 'Confirmando...' : '✅ Sí, confirmar entrega' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- MODAL: CONFIRMAR ELIMINACIÓN -->
+  @if (deletingOrder(); as order) {
+    <div class="modal-backdrop" (click)="cancelConfirmDelete()">
+      <div class="modal-panel delete-panel" (click)="$event.stopPropagation()">
+        <div class="confirm-head delete-head">
+          <div class="delete-circle">🗑️</div>
+          <div>
+            <h3 class="text-danger">Eliminar Pedido</h3>
+            <p>Folio <strong>{{ order.order_number }}</strong></p>
+          </div>
+        </div>
+
+        <div class="confirm-body">
+          <div class="summary-pill delete-pill">
+            <div><strong>Cliente:</strong> {{ order.customer_name }} ({{ order.customer_phone }})</div>
+            <div><strong>Domicilio:</strong> {{ order.delivery_address }}</div>
+            <div><strong>Fecha de entrega:</strong> {{ formatDeliveryDate(order.delivery_date) }} · {{ formatDeliveryTime(order.delivery_time) }}</div>
+            <div><strong>Total del pedido:</strong> {{ formatCurrency(order.total) }}</div>
+          </div>
+
+          <div class="alert alert-error" style="margin: 0;">
+            ⚠️ <strong>¿Confirmas que deseas eliminar este pedido permanentemente?</strong>
+            <p style="margin: 4px 0 0; font-size: 0.86rem;">
+              Esta acción no se puede deshacer. Se borrará el registro del pedido y todos sus productos asociados.
+            </p>
+          </div>
+        </div>
+
+        <div class="confirm-actions">
+          <button
+            type="button"
+            class="btn btn-outline"
+            (click)="cancelConfirmDelete()"
+            [disabled]="isDeleting()"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            class="btn btn-danger"
+            (click)="confirmDelete()"
+            [disabled]="isDeleting()"
+          >
+            {{ isDeleting() ? 'Eliminando...' : '🗑️ Sí, eliminar pedido' }}
           </button>
         </div>
       </div>

@@ -47,9 +47,12 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Orders & PDF
     Route::get('/orders/today', [OrderController::class, 'today']);
+    Route::get('/orders/upcoming', [OrderController::class, 'upcoming']);
     Route::get('/orders', [OrderController::class, 'index']);
     Route::post('/orders', [OrderController::class, 'store']);
     Route::get('/orders/{order}', [OrderController::class, 'show']);
+    Route::put('/orders/{order}', [OrderController::class, 'update']);
+    Route::delete('/orders/{order}', [OrderController::class, 'destroy']);
     Route::get('/orders/{order}/pdf', [OrderController::class, 'pdf']);
     Route::patch('/orders/{order}/deliver', [OrderController::class, 'deliver']);
 

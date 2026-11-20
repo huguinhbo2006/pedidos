@@ -21,6 +21,7 @@ export interface CreateOrderPayload {
   customer_address_id?: number | null;
   delivery_address: string;
   delivery_references?: string | null;
+  delivery_date?: string | null;
   delivery_time?: string | null;
   delivery_place_id?: string | null;
   delivery_lat?: number | null;
@@ -153,6 +154,16 @@ export class ApiService {
     return this.http.get<TodayOrdersResponse>(`${this.apiUrl}/orders/today`, { params });
   }
 
+  getUpcomingOrders(search?: string): Observable<Order[]> {
+    let params = new HttpParams();
+    if (search) params = params.set('search', search);
+    return this.http.get<Order[]>(`${this.apiUrl}/orders/upcoming`, { params });
+  }
+
+  getOrder(id: number): Observable<Order> {
+    return this.http.get<Order>(`${this.apiUrl}/orders/${id}`);
+  }
+
   getOrders(filters?: { date?: string; status?: 'all' | 'pending' | 'delivered'; search?: string }): Observable<Order[]> {
     let params = new HttpParams();
     if (filters?.date) params = params.set('date', filters.date);
@@ -163,6 +174,14 @@ export class ApiService {
 
   createOrder(payload: CreateOrderPayload): Observable<Order> {
     return this.http.post<Order>(`${this.apiUrl}/orders`, payload);
+  }
+
+  updateOrder(id: number, payload: CreateOrderPayload): Observable<Order> {
+    return this.http.put<Order>(`${this.apiUrl}/orders/${id}`, payload);
+  }
+
+  deleteOrder(id: number): Observable<{ message: string }> {
+    return this.http.delete<{ message: string }>(`${this.apiUrl}/orders/${id}`);
   }
 
   markOrderDelivered(orderId: number): Observable<{ message: string; order: Order }> {

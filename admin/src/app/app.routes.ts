@@ -23,6 +23,7 @@ export const routes: Routes = [
       { path: '', redirectTo: 'pedidos', pathMatch: 'full' },
       { path: 'pedidos', component: TodayOrdersComponent },
       { path: 'pedidos/nuevo', component: NewOrderComponent },
+      { path: 'pedidos/editar/:id', component: NewOrderComponent },
       { path: 'catalogo', component: CatalogComponent },
       { path: 'paquetes', component: PackagesAdminComponent },
       { path: 'clientes', component: CustomersComponent },

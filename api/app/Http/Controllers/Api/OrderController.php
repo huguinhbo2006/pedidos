@@ -21,17 +21,27 @@ class OrderController extends Controller
 {
     public function today(Request $request): JsonResponse
     {
+        $todayStr = Carbon::today()->toDateString();
         $todayStart = Carbon::today()->startOfDay();
         $todayEnd = Carbon::today()->endOfDay();
 
+        // Scope to match orders delivered/due today
+        $forTodayScope = function ($q) use ($todayStr, $todayStart, $todayEnd) {
+            $q->whereDate('delivery_date', $todayStr)
+                ->orWhere(function ($sub) use ($todayStart, $todayEnd) {
+                    $sub->whereNull('delivery_date')
+                        ->whereBetween('created_at', [$todayStart, $todayEnd]);
+                });
+        };
+
         $allToday = Order::query()
-            ->whereBetween('created_at', [$todayStart, $todayEnd])
-            ->get(['id', 'is_delivered', 'total']);
+            ->where($forTodayScope)
+            ->get(['id', 'is_delivered', 'total', 'delivery_date']);
 
         $pendingQuery = Order::query()
             ->with(['items'])
-            ->whereBetween('created_at', [$todayStart, $todayEnd])
-            ->where('is_delivered', false);
+            ->where('is_delivered', false)
+            ->where($forTodayScope);
 
         if ($search = trim((string) $request->query('search', ''))) {
             $pendingQuery->where(function ($q) use ($search) {
@@ -43,8 +53,29 @@ class OrderController extends Controller
         }
 
         $pendingOrders = $pendingQuery
-            ->orderByDesc('created_at')
+            ->orderBy('delivery_time')
             ->orderByDesc('id')
+            ->get();
+
+        // Upcoming orders (scheduled for future dates)
+        $upcomingQuery = Order::query()
+            ->with(['items'])
+            ->where('is_delivered', false)
+            ->whereDate('delivery_date', '>', $todayStr);
+
+        if ($search = trim((string) $request->query('search', ''))) {
+            $upcomingQuery->where(function ($q) use ($search) {
+                $q->where('order_number', 'like', "%{$search}%")
+                    ->orWhere('customer_name', 'like', "%{$search}%")
+                    ->orWhere('customer_phone', 'like', "%{$search}%")
+                    ->orWhere('delivery_address', 'like', "%{$search}%");
+            });
+        }
+
+        $upcomingOrders = $upcomingQuery
+            ->orderBy('delivery_date')
+            ->orderBy('delivery_time')
+            ->orderBy('id')
             ->get();
 
         $pendingCount = $allToday->where('is_delivered', false)->count();
@@ -53,8 +84,9 @@ class OrderController extends Controller
         $deliveredAmount = round((float) $allToday->where('is_delivered', true)->sum('total'), 2);
 
         return response()->json([
-            'date' => Carbon::today()->toDateString(),
+            'date' => $todayStr,
             'orders' => $pendingOrders,
+            'upcoming_orders' => $upcomingOrders,
             'summary' => [
                 'pending_count' => $pendingCount,
                 'delivered_count' => $deliveredCount,
@@ -62,8 +94,36 @@ class OrderController extends Controller
                 'pending_amount' => $pendingAmount,
                 'delivered_amount' => $deliveredAmount,
                 'total_sales_today' => round($pendingAmount + $deliveredAmount, 2),
+                'upcoming_count' => $upcomingOrders->count(),
+                'upcoming_amount' => round((float) $upcomingOrders->sum('total'), 2),
             ],
         ]);
+    }
+
+    public function upcoming(Request $request): JsonResponse
+    {
+        $todayStr = Carbon::today()->toDateString();
+        $query = Order::query()
+            ->with(['items'])
+            ->where('is_delivered', false)
+            ->whereDate('delivery_date', '>', $todayStr);
+
+        if ($search = trim((string) $request->query('search', ''))) {
+            $query->where(function ($q) use ($search) {
+                $q->where('order_number', 'like', "%{$search}%")
+                    ->orWhere('customer_name', 'like', "%{$search}%")
+                    ->orWhere('customer_phone', 'like', "%{$search}%")
+                    ->orWhere('delivery_address', 'like', "%{$search}%");
+            });
+        }
+
+        $upcoming = $query
+            ->orderBy('delivery_date')
+            ->orderBy('delivery_time')
+            ->orderBy('id')
+            ->get();
+
+        return response()->json($upcoming);
     }
 
     public function index(Request $request): JsonResponse
@@ -71,8 +131,15 @@ class OrderController extends Controller
         $query = Order::query()->with(['items']);
 
         if ($date = trim((string) $request->query('date', ''))) {
+            $dayStr = Carbon::parse($date)->toDateString();
             $day = Carbon::parse($date);
-            $query->whereBetween('created_at', [$day->copy()->startOfDay(), $day->copy()->endOfDay()]);
+            $query->where(function ($q) use ($dayStr, $day) {
+                $q->whereDate('delivery_date', $dayStr)
+                    ->orWhere(function ($sub) use ($day) {
+                        $sub->whereNull('delivery_date')
+                            ->whereBetween('created_at', [$day->copy()->startOfDay(), $day->copy()->endOfDay()]);
+                    });
+            });
         }
 
         $status = $request->query('status', 'all');
@@ -107,12 +174,76 @@ class OrderController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        $data = $this->validateOrderPayload($request);
+        $order = $this->processOrderData($data, $request);
+
+        return response()->json($order, 201);
+    }
+
+    public function update(Request $request, Order $order): JsonResponse
+    {
+        $data = $this->validateOrderPayload($request);
+        $updatedOrder = $this->processOrderData($data, $request, $order);
+
+        return response()->json($updatedOrder);
+    }
+
+    public function destroy(Order $order): JsonResponse
+    {
+        $orderNumber = $order->order_number;
+
+        DB::transaction(function () use ($order) {
+            $order->items()->delete();
+            $order->delete();
+        });
+
+        return response()->json([
+            'message' => "Pedido {$orderNumber} eliminado correctamente.",
+        ]);
+    }
+
+    public function deliver(Order $order): JsonResponse
+    {
+        if (! $order->is_delivered) {
+            $order->update([
+                'is_delivered' => true,
+                'delivered_at' => now(),
+            ]);
+        }
+
+        return response()->json([
+            'message' => "Pedido {$order->order_number} marcado como entregado.",
+            'order' => $order->load('items'),
+        ]);
+    }
+
+    public function pdf(Order $order): Response
+    {
+        $order->load('items');
+
+        $logoBase64 = null;
+        $logoPath = public_path('images/logo-mary.jpg');
+        if (is_file($logoPath)) {
+            $logoBase64 = 'data:image/jpeg;base64,' . base64_encode((string) file_get_contents($logoPath));
+        }
+
+        $pdf = Pdf::loadView('pdf.order', [
+            'order' => $order,
+            'logoBase64' => $logoBase64,
+        ])->setPaper('letter', 'portrait');
+
+        return $pdf->download("pedido-{$order->order_number}.pdf");
+    }
+
+    private function validateOrderPayload(Request $request): array
+    {
         $data = $request->validate([
             'customer_phone' => ['required', 'string', 'min:7', 'max:30'],
             'customer_name' => ['required', 'string', 'min:2', 'max:150'],
             'customer_address_id' => ['nullable', 'integer'],
             'delivery_address' => ['required', 'string', 'min:4', 'max:500'],
             'delivery_references' => ['nullable', 'string', 'max:300'],
+            'delivery_date' => ['nullable', 'date'],
             'delivery_time' => ['nullable', 'string', 'max:60'],
             'delivery_place_id' => ['nullable', 'string', 'max:255'],
             'delivery_lat' => ['nullable', 'numeric', 'between:-90,90'],
@@ -148,7 +279,16 @@ class OrderController extends Controller
             ]);
         }
 
-        $order = DB::transaction(function () use ($data, $normalizedPhone, $request) {
+        $data['_normalized_phone'] = $normalizedPhone;
+
+        return $data;
+    }
+
+    private function processOrderData(array $data, Request $request, ?Order $existingOrder = null): Order
+    {
+        $normalizedPhone = $data['_normalized_phone'];
+
+        return DB::transaction(function () use ($data, $normalizedPhone, $request, $existingOrder) {
             $customerName = trim($data['customer_name']);
 
             // 1. Find or create customer automatically by phone
@@ -369,7 +509,49 @@ class OrderController extends Controller
 
             $finalTotal = max(0.0, round($subtotal - $promoDiscountAmount - $manualDiscountAmount, 2));
 
-            // 6. Generate unique daily order number
+            $deliveryDate = ! empty($data['delivery_date'])
+                ? Carbon::parse($data['delivery_date'])->toDateString()
+                : Carbon::today()->toDateString();
+
+            $deliveryTime = isset($data['delivery_time']) && trim((string) $data['delivery_time']) !== ''
+                ? trim((string) $data['delivery_time'])
+                : null;
+
+            $notes = isset($data['notes']) && trim($data['notes']) !== '' ? trim($data['notes']) : null;
+
+            if ($existingOrder) {
+                // Update existing order
+                $existingOrder->update([
+                    'customer_id' => $customer->id,
+                    'customer_address_id' => $customerAddress->id,
+                    'customer_name' => $customerName,
+                    'customer_phone' => $normalizedPhone,
+                    'delivery_address' => $customerAddress->address,
+                    'delivery_references' => $references,
+                    'delivery_date' => $deliveryDate,
+                    'delivery_time' => $deliveryTime,
+                    'delivery_place_id' => $placeId,
+                    'delivery_lat' => $lat,
+                    'delivery_lng' => $lng,
+                    'subtotal' => $subtotal,
+                    'promo_savings' => $promoSavings,
+                    'promo_discount_amount' => $promoDiscountAmount,
+                    'applied_promotions' => ! empty($appliedPromotions) ? $appliedPromotions : null,
+                    'manual_discount_type' => $manualType,
+                    'manual_discount_value' => $manualValue,
+                    'manual_discount_amount' => $manualDiscountAmount,
+                    'manual_discount_reason' => $manualReason,
+                    'total' => $finalTotal,
+                    'notes' => $notes,
+                ]);
+
+                $existingOrder->items()->delete();
+                $existingOrder->items()->createMany($preparedItems);
+
+                return $existingOrder->fresh()->load(['items', 'customer.addresses']);
+            }
+
+            // 6. Generate unique daily order number for new order
             $todayPrefix = 'TD-' . Carbon::today()->format('Ymd') . '-';
             $todaySeq = Order::whereBetween('created_at', [
                 Carbon::today()->startOfDay(),
@@ -390,9 +572,8 @@ class OrderController extends Controller
                 'customer_phone' => $normalizedPhone,
                 'delivery_address' => $customerAddress->address,
                 'delivery_references' => $references,
-                'delivery_time' => isset($data['delivery_time']) && trim((string) $data['delivery_time']) !== ''
-                    ? trim((string) $data['delivery_time'])
-                    : null,
+                'delivery_date' => $deliveryDate,
+                'delivery_time' => $deliveryTime,
                 'delivery_place_id' => $placeId,
                 'delivery_lat' => $lat,
                 'delivery_lng' => $lng,
@@ -405,7 +586,7 @@ class OrderController extends Controller
                 'manual_discount_amount' => $manualDiscountAmount,
                 'manual_discount_reason' => $manualReason,
                 'total' => $finalTotal,
-                'notes' => isset($data['notes']) && trim($data['notes']) !== '' ? trim($data['notes']) : null,
+                'notes' => $notes,
                 'is_delivered' => false,
                 'created_by' => $request->user()?->id,
             ]);
@@ -414,41 +595,6 @@ class OrderController extends Controller
 
             return $order->load(['items', 'customer.addresses']);
         });
-
-        return response()->json($order, 201);
-    }
-
-    public function deliver(Order $order): JsonResponse
-    {
-        if (! $order->is_delivered) {
-            $order->update([
-                'is_delivered' => true,
-                'delivered_at' => now(),
-            ]);
-        }
-
-        return response()->json([
-            'message' => "Pedido {$order->order_number} marcado como entregado.",
-            'order' => $order->load('items'),
-        ]);
-    }
-
-    public function pdf(Order $order): Response
-    {
-        $order->load('items');
-
-        $logoBase64 = null;
-        $logoPath = public_path('images/logo-mary.jpg');
-        if (is_file($logoPath)) {
-            $logoBase64 = 'data:image/jpeg;base64,' . base64_encode((string) file_get_contents($logoPath));
-        }
-
-        $pdf = Pdf::loadView('pdf.order', [
-            'order' => $order,
-            'logoBase64' => $logoBase64,
-        ])->setPaper('letter', 'portrait');
-
-        return $pdf->download("pedido-{$order->order_number}.pdf");
     }
 
     /**

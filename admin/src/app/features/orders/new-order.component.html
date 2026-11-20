@@ -1,10 +1,12 @@
 <section class="new-order-page">
   <div class="page-header">
     <div>
-      <h1>Nuevo Pedido — Taquería Mary</h1>
-      <p class="subtitle">Captura tu pedido paso a paso mientras revisas el resumen en tiempo real.</p>
+      <h1>{{ editOrderId() ? 'Modificar Pedido ' + (editingOrderNumber() || '') : 'Nuevo Pedido — Taquería Mary' }}</h1>
+      <p class="subtitle">
+        {{ editOrderId() ? 'Actualiza los datos, dirección, fecha/hora y productos del pedido.' : 'Captura tu pedido paso a paso mientras revisas el resumen en tiempo real.' }}
+      </p>
     </div>
-    <a routerLink="/pedidos" class="btn btn-outline">← Volver a Pedidos del Día</a>
+    <a routerLink="/pedidos" class="btn btn-outline">← Volver a Pedidos</a>
   </div>
 
   <div class="order-layout">
@@ -247,6 +249,39 @@
               </div>
             </div>
           }
+
+          <div class="delivery-time-box" style="margin-bottom: 12px;">
+            <div class="dt-head">
+              <label>📅 Fecha de entrega</label>
+              <span class="dt-current">{{ formattedDeliveryDate() }}</span>
+            </div>
+            <div class="dt-controls">
+              <button
+                type="button"
+                class="dt-chip"
+                [class.active]="deliveryDate() === todayIso"
+                (click)="setDeliveryDate(todayIso)"
+              >
+                📅 Hoy
+              </button>
+              <button
+                type="button"
+                class="dt-chip"
+                [class.active]="deliveryDate() === tomorrowIso"
+                (click)="setDeliveryDate(tomorrowIso)"
+              >
+                ⏩ Mañana
+              </button>
+              <input
+                type="date"
+                class="dt-time-input"
+                style="padding: 6px 10px; font-weight: 600;"
+                [min]="todayIso"
+                [ngModel]="deliveryDate()"
+                (ngModelChange)="setDeliveryDate($event)"
+              />
+            </div>
+          </div>
 
           <div class="delivery-time-box">
             <div class="dt-head">
@@ -659,9 +694,10 @@
           </button>
 
           <button type="button" class="meta-row" (click)="goToStep(2)">
-            <span class="meta-ico">⏰</span>
+            <span class="meta-ico">📅</span>
             <div class="meta-txt">
-              <strong>Entrega: {{ activeDeliveryTimeLabel }}</strong>
+              <strong>Fecha: {{ formattedDeliveryDate() }}</strong>
+              <small>Hora: {{ activeDeliveryTimeLabel }}</small>
             </div>
             <span class="meta-edit">Cambiar</span>
           </button>
@@ -897,7 +933,7 @@
             [disabled]="submitting() || cart().length === 0"
             (click)="submitOrder(false)"
           >
-            {{ submitting() ? 'Guardando pedido...' : '✅ Guardar Pedido (' + formatCurrency(finalOrderTotal()) + ')' }}
+            {{ submitting() ? 'Guardando pedido...' : (editOrderId() ? '💾 Guardar Cambios (' + formatCurrency(finalOrderTotal()) + ')' : '✅ Guardar Pedido (' + formatCurrency(finalOrderTotal()) + ')') }}
           </button>
 
           <button
@@ -906,7 +942,7 @@
             [disabled]="submitting() || cart().length === 0"
             (click)="submitOrder(true)"
           >
-            📄 Guardar y Abrir PDF
+            {{ editOrderId() ? '💾 Guardar Cambios y Ver PDF' : '📄 Guardar y Abrir PDF' }}
           </button>
         </div>
       </div>
