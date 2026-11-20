@@ -177,6 +177,8 @@ export interface Order {
   manual_discount_reason: string | null;
   total: number;
   notes: string | null;
+  assigned_employee_id?: number | null;
+  assigned_employee?: Employee | null;
   is_delivered: boolean;
   delivered_at: string | null;
   created_at: string;
@@ -233,4 +235,16 @@ export interface WhatsAppDevice {
 export interface WhatsAppDevicesResponse {
   devices: WhatsAppDevice[];
   api_url: string;
+}
+
+export interface Employee {
+  id: number;
+  name: string;
+  phone: string;
+  role: string;
+  notes?: string | null;
+  is_active: boolean;
+  orders_count?: number;
+  created_at?: string;
+  updated_at?: string;
 }

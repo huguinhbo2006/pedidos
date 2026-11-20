@@ -240,4 +240,57 @@ class WhatsAppDeviceController extends Controller
             'whatsapp_api_url' => $url,
         ]);
     }
+
+    public function testMessage(Request $request, WhatsAppDevice $device): JsonResponse
+    {
+        $request->validate([
+            'numero' => ['required', 'string', 'min:8', 'max:25'],
+            'mensaje' => ['required', 'string', 'min:1', 'max:1000'],
+        ]);
+
+        $cleanNumber = preg_replace('/\D/', '', $request->input('numero'));
+
+        if (strlen($cleanNumber) < 8) {
+            return response()->json([
+                'success' => false,
+                'error' => 'El número de teléfono debe tener al menos 8 dígitos.',
+            ], 422);
+        }
+
+        // Si es número mexicano de 10 dígitos, formatear con lada internacional México (+52 1)
+        if (strlen($cleanNumber) === 10) {
+            $cleanNumber = '521' . $cleanNumber;
+        } elseif (strlen($cleanNumber) === 12 && str_starts_with($cleanNumber, '52') && !str_starts_with($cleanNumber, '521')) {
+            $cleanNumber = '521' . substr($cleanNumber, 2);
+        }
+
+        $mensaje = trim($request->input('mensaje'));
+        $apiUrl = $this->getApiUrl();
+
+        try {
+            $response = Http::timeout(15)->post("{$apiUrl}/sessions/{$device->session_id}/send-message", [
+                'numero' => $cleanNumber,
+                'mensaje' => $mensaje,
+            ]);
+
+            if ($response->successful()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => '¡Mensaje de prueba enviado exitosamente!',
+                    'data' => $response->json(),
+                ]);
+            }
+
+            $errorMsg = $response->json('error') ?: 'El servidor de WhatsApp no pudo entregar el mensaje. Asegúrate de que el dispositivo esté conectado.';
+            return response()->json([
+                'success' => false,
+                'error' => $errorMsg,
+            ], $response->status() >= 400 && $response->status() < 500 ? $response->status() : 422);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Error al comunicar con el microservicio de WhatsApp: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
 }

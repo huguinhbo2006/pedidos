@@ -1,0 +1,377 @@
+<section class="employees-page">
+  <div class="page-header">
+    <div>
+      <h1>Catálogo de Empleados</h1>
+      <p class="subtitle">
+        Administra a tu equipo de trabajo (repartidores, cocina, caja) para asignación de pedidos y avisos por WhatsApp.
+      </p>
+    </div>
+
+    <div class="header-actions">
+      <button type="button" class="btn btn-outline" (click)="loadEmployees()" [disabled]="loading()">
+        🔄 Actualizar
+      </button>
+      <button type="button" class="btn btn-primary btn-lg" (click)="openCreateModal()">
+        ➕ Nuevo Empleado
+      </button>
+    </div>
+  </div>
+
+  <!-- KPI SUMMARY -->
+  <div class="kpi-row">
+    <div class="kpi-card card">
+      <span class="kpi-label">Total Empleados</span>
+      <strong class="kpi-value text-primary">{{ employees().length }}</strong>
+      <small>Personal registrado en sistema</small>
+    </div>
+
+    <div class="kpi-card card">
+      <span class="kpi-label">Activos hoy</span>
+      <strong class="kpi-value text-green">{{ totalActive() }}</strong>
+      <small>{{ totalActive() }} de {{ employees().length }} listos para asignar</small>
+    </div>
+
+    <div class="kpi-card card">
+      <span class="kpi-label">Repartidores</span>
+      <strong class="kpi-value text-gold">{{ totalRepartidores() }}</strong>
+      <small>Personal disponible para entregas</small>
+    </div>
+  </div>
+
+  <!-- FILTROS Y BÚSQUEDA -->
+  <div class="filter-bar card">
+    <div class="search-input-wrap">
+      <span class="search-icon">🔍</span>
+      <input
+        type="search"
+        class="form-control"
+        placeholder="Buscar por nombre, celular o notas..."
+        [(ngModel)]="searchQuery"
+      />
+    </div>
+
+    <div class="role-filter-wrap">
+      <label for="filterRole">Puesto / Rol:</label>
+      <select id="filterRole" class="form-control" [(ngModel)]="roleFilter">
+        <option value="all">Todos los roles</option>
+        <option value="repartidor">🛵 Repartidores</option>
+        <option value="cocina">👨‍🍳 Cocina</option>
+        <option value="caja">💵 Caja</option>
+        <option value="mostrador">🌮 Mostrador</option>
+        <option value="otro">Otro</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- LISTADO DE EMPLEADOS -->
+  @if (loading()) {
+    <div class="empty-state card">
+      <p>Cargando lista de empleados...</p>
+    </div>
+  } @else if (employees().length === 0) {
+    <div class="empty-state card">
+      <div class="empty-emoji">👥</div>
+      <h2>No hay empleados registrados</h2>
+      <p>Da de alta a tus repartidores y colaboradores para enviarles notificaciones de entrega por WhatsApp.</p>
+      <button type="button" class="btn btn-primary btn-lg" (click)="openCreateModal()">
+        ➕ Registrar Primer Empleado
+      </button>
+    </div>
+  } @else if (filteredEmployees().length === 0) {
+    <div class="empty-state card">
+      <div class="empty-emoji">🔍</div>
+      <h3>No se encontraron empleados</h3>
+      <p>Ningún empleado coincide con el filtro de búsqueda actual.</p>
+      <button type="button" class="btn btn-outline" (click)="searchQuery.set(''); roleFilter.set('all')">
+        Limpiar filtros
+      </button>
+    </div>
+  } @else {
+    <div class="employees-grid">
+      @for (emp of filteredEmployees(); track emp.id) {
+        <article class="employee-card card" [class.is-inactive]="!emp.is_active">
+          <div class="card-head">
+            <div class="head-left">
+              <span class="role-avatar">
+                @if (emp.role === 'repartidor') { 🛵 }
+                @else if (emp.role === 'cocina') { 👨‍🍳 }
+                @else if (emp.role === 'caja') { 💵 }
+                @else { 👤 }
+              </span>
+              <div>
+                <h3>{{ emp.name }}</h3>
+                <span class="badge badge-role">{{ getRoleLabel(emp.role) }}</span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              class="btn-status-toggle"
+              [class.status-active]="emp.is_active"
+              (click)="toggleActive(emp)"
+              title="Clic para cambiar estado activo/inactivo"
+            >
+              {{ emp.is_active ? '🟢 Activo' : '⚪ Inactivo' }}
+            </button>
+          </div>
+
+          <div class="card-body">
+            <div class="phone-row">
+              <span class="label">📱 Celular:</span>
+              <strong class="phone-number">{{ formatPhone(emp.phone) }}</strong>
+            </div>
+
+            @if (emp.notes) {
+              <div class="notes-box">
+                <span class="notes-icon">📝</span>
+                <span class="notes-text">{{ emp.notes }}</span>
+              </div>
+            }
+
+            @if ((emp.orders_count ?? 0) > 0) {
+              <div class="orders-count-badge">
+                🛵 {{ emp.orders_count }} pedido(s) atendido(s)
+              </div>
+            }
+          </div>
+
+          <div class="card-foot">
+            <div class="foot-wa-actions">
+              <button
+                type="button"
+                class="btn btn-success btn-sm"
+                (click)="openQuickWaModal(emp)"
+                title="Enviar mensaje directo desde el sistema"
+              >
+                💬 WhatsApp
+              </button>
+              <button
+                type="button"
+                class="btn btn-outline btn-sm"
+                (click)="openWaWebChat(emp.phone)"
+                title="Abrir chat en WhatsApp Web o app móvil"
+              >
+                🌐 Chat
+              </button>
+            </div>
+
+            <div class="foot-crud-actions">
+              <button
+                type="button"
+                class="btn btn-outline btn-sm"
+                (click)="openEditModal(emp)"
+                title="Editar datos del empleado"
+              >
+                ✏️
+              </button>
+              <button
+                type="button"
+                class="btn btn-danger-ghost btn-sm"
+                (click)="openDeleteModal(emp)"
+                title="Eliminar empleado"
+              >
+                🗑️
+              </button>
+            </div>
+          </div>
+        </article>
+      }
+    </div>
+  }
+
+  <!-- MODAL: CREAR / EDITAR EMPLEADO -->
+  @if (formModalOpen()) {
+    <div class="modal-backdrop" (click)="closeFormModal()">
+      <div class="modal-panel" (click)="$event.stopPropagation()">
+        <div class="modal-head">
+          <div class="head-title">
+            <span class="icon">{{ editingEmployee() ? '✏️' : '➕' }}</span>
+            <div>
+              <h3>{{ editingEmployee() ? 'Editar Empleado' : 'Registrar Nuevo Empleado' }}</h3>
+              <p>Datos del personal para avisos de entrega y pedidos</p>
+            </div>
+          </div>
+          <button type="button" class="btn-close" (click)="closeFormModal()" [disabled]="isSaving()">✕</button>
+        </div>
+
+        <div class="modal-body">
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label for="empName"><strong>Nombre Completo: *</strong></label>
+            <input
+              id="empName"
+              type="text"
+              class="form-control"
+              [(ngModel)]="formName"
+              placeholder="Ej. Juan Pérez López"
+              [disabled]="isSaving()"
+              autofocus
+            />
+          </div>
+
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label for="empPhone"><strong>Teléfono Celular (WhatsApp): *</strong></label>
+            <input
+              id="empPhone"
+              type="tel"
+              class="form-control"
+              [(ngModel)]="formPhone"
+              placeholder="Ej. 3312345678"
+              [disabled]="isSaving()"
+            />
+            <small class="help-text">
+              10 dígitos para México o formato internacional. Se usará para enviar pedidos por WhatsApp.
+            </small>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label for="empRole"><strong>Puesto / Función:</strong></label>
+            <select id="empRole" class="form-control" [(ngModel)]="formRole" [disabled]="isSaving()">
+              <option value="repartidor">🛵 Repartidor / Envíos</option>
+              <option value="cocina">👨‍🍳 Cocina / Preparación</option>
+              <option value="caja">💵 Caja / Cobro</option>
+              <option value="mostrador">🌮 Mostrador / Atención</option>
+              <option value="otro">Otro</option>
+            </select>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label for="empNotes"><strong>Notas / Horario / Turno:</strong></label>
+            <input
+              id="empNotes"
+              type="text"
+              class="form-control"
+              [(ngModel)]="formNotes"
+              placeholder="Ej. Turno vespertino, Moto roja mod. 2022"
+              [disabled]="isSaving()"
+            />
+          </div>
+
+          <div class="checkbox-row">
+            <label class="custom-checkbox">
+              <input type="checkbox" [(ngModel)]="formActive" [disabled]="isSaving()" />
+              <span><strong>Empleado Activo</strong> (disponible para asignaciones de pedidos)</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" (click)="closeFormModal()" [disabled]="isSaving()">
+            Cancelar
+          </button>
+          <button
+            type="button"
+            class="btn btn-primary"
+            (click)="saveEmployee()"
+            [disabled]="isSaving() || !formName().trim() || !formPhone().trim()"
+          >
+            {{ isSaving() ? 'Guardando...' : (editingEmployee() ? '💾 Guardar Cambios' : '➕ Registrar Empleado') }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- MODAL: MENSAJE RÁPIDO DE WHATSAPP AL EMPLEADO -->
+  @if (quickWaModalOpen() && quickWaTarget(); as target) {
+    <div class="modal-backdrop" (click)="closeQuickWaModal()">
+      <div class="modal-panel" (click)="$event.stopPropagation()">
+        <div class="modal-head">
+          <div class="head-title">
+            <span class="icon">💬</span>
+            <div>
+              <h3>Enviar WhatsApp a Empleado</h3>
+              <p>Destino: <strong>{{ target.name }}</strong> ({{ formatPhone(target.phone) }})</p>
+            </div>
+          </div>
+          <button type="button" class="btn-close" (click)="closeQuickWaModal()" [disabled]="isSendingQuickWa()">✕</button>
+        </div>
+
+        <div class="modal-body">
+          @if (quickWaStatus(); as status) {
+            <div
+              class="alert"
+              [class.alert-success]="status.type === 'success'"
+              [class.alert-error]="status.type === 'error'"
+              style="margin-bottom: 1rem;"
+            >
+              {{ status.type === 'success' ? '✅' : '❌' }} {{ status.message }}
+            </div>
+          }
+
+          <div class="form-group">
+            <label for="quickMsg"><strong>Mensaje:</strong></label>
+            <textarea
+              id="quickMsg"
+              rows="4"
+              class="form-control"
+              [(ngModel)]="quickWaMessage"
+              placeholder="Escribe el mensaje para el empleado..."
+              [disabled]="isSendingQuickWa()"
+              autofocus
+            ></textarea>
+          </div>
+
+          @if (connectedDevices().length === 0) {
+            <div class="alert alert-warning" style="margin-top: 1rem;">
+              ⚠️ <strong>No hay dispositivos de WhatsApp conectados en este momento.</strong>
+              Puedes conectar uno en la sección <strong>💬 WhatsApp</strong> o usar el botón <strong>🌐 Abrir WhatsApp Web</strong>.
+            </div>
+          }
+        </div>
+
+        <div class="modal-actions">
+          <button
+            type="button"
+            class="btn btn-outline"
+            (click)="openWaWebChat(target.phone)"
+            title="Abrir en WhatsApp Web / Desktop"
+          >
+            🌐 Abrir en WhatsApp Web
+          </button>
+          <button
+            type="button"
+            class="btn btn-primary"
+            (click)="sendQuickWa()"
+            [disabled]="isSendingQuickWa() || !quickWaMessage().trim() || connectedDevices().length === 0"
+          >
+            {{ isSendingQuickWa() ? '⏳ Enviando...' : '🚀 Enviar desde el Sistema' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- MODAL: CONFIRMAR ELIMINACIÓN -->
+  @if (deletingEmployee(); as delEmp) {
+    <div class="modal-backdrop" (click)="cancelDelete()">
+      <div class="modal-panel" (click)="$event.stopPropagation()">
+        <div class="modal-head delete-head">
+          <div class="head-title">
+            <div class="delete-icon">🗑️</div>
+            <div>
+              <h3 class="text-danger">Eliminar Empleado</h3>
+              <p>{{ delEmp.name }}</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-body">
+          <p>¿Estás seguro de que deseas eliminar del catálogo a <strong>{{ delEmp.name }}</strong>?</p>
+          <div class="summary-pill">
+            <div><strong>Teléfono:</strong> {{ formatPhone(delEmp.phone) }}</div>
+            <div><strong>Rol:</strong> {{ getRoleLabel(delEmp.role) }}</div>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" (click)="cancelDelete()" [disabled]="isDeleting()">
+            Cancelar
+          </button>
+          <button type="button" class="btn btn-danger" (click)="confirmDelete()" [disabled]="isDeleting()">
+            {{ isDeleting() ? 'Eliminando...' : '🗑️ Sí, eliminar' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+</section>

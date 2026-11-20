@@ -118,6 +118,12 @@
             <div class="customer-phone">📞 {{ order.customer_phone }}</div>
           </div>
 
+          @if (order.assigned_employee) {
+            <div class="assigned-employee-pill">
+              🛵 <strong>Repartidor:</strong> {{ order.assigned_employee.name }}
+            </div>
+          }
+
           <div class="delivery-time-pill scheduled">
             📅 <strong>Entrega:</strong> {{ formatDeliveryDate(order.delivery_date) }} &nbsp;·&nbsp; ⏰ <strong>Hora:</strong> {{ formatDeliveryTime(order.delivery_time) }}
           </div>
@@ -213,6 +219,15 @@
                 title="Abrir / descargar comprobante PDF"
               >
                 {{ downloadingPdfId() === order.id ? 'PDF...' : '📄 PDF' }}
+              </button>
+
+              <button
+                type="button"
+                class="btn btn-whatsapp-btn btn-sm"
+                (click)="openWhatsAppModal(order)"
+                title="Enviar notificación por WhatsApp al cliente o repartidor"
+              >
+                💬 WhatsApp
               </button>
 
               <a
@@ -337,6 +352,123 @@
             [disabled]="isDeleting()"
           >
             {{ isDeleting() ? 'Eliminando...' : '🗑️ Sí, eliminar pedido' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- MODAL: NOTIFICACIÓN DE WHATSAPP PARA EL PEDIDO -->
+  @if (whatsappModalOpen() && whatsappTargetOrder(); as order) {
+    <div class="modal-backdrop" (click)="closeWhatsAppModal()">
+      <div class="modal-panel wa-modal-panel" (click)="$event.stopPropagation()">
+        <div class="confirm-head wa-head">
+          <div class="wa-header-left">
+            <span class="wa-big-icon">💬</span>
+            <div>
+              <h3>Enviar Notificación de WhatsApp</h3>
+              <p>Pedido <strong>#{{ order.order_number }}</strong> · Total: {{ formatCurrency(order.total) }}</p>
+            </div>
+          </div>
+          <button type="button" class="btn-close" (click)="closeWhatsAppModal()" [disabled]="isSendingWhatsApp()">✕</button>
+        </div>
+
+        <div class="confirm-body">
+          <!-- SELECTOR DE DESTINATARIO: CLIENTE VS REPARTIDOR -->
+          <div class="wa-recipient-selector">
+            <button
+              type="button"
+              class="selector-btn"
+              [class.active]="whatsappRecipientType() === 'customer'"
+              (click)="setWhatsAppRecipientType('customer')"
+            >
+              👤 Al Cliente
+              <small>{{ order.customer_name }} ({{ order.customer_phone }})</small>
+            </button>
+
+            <button
+              type="button"
+              class="selector-btn"
+              [class.active]="whatsappRecipientType() === 'employee'"
+              (click)="setWhatsAppRecipientType('employee')"
+            >
+              🛵 Al Repartidor
+              <small>{{ whatsappEmployees().length }} repartidores disponibles</small>
+            </button>
+          </div>
+
+          @if (whatsappRecipientType() === 'employee') {
+            <div class="form-group" style="margin-top: 0.85rem;">
+              <label for="waEmpSelect"><strong>Seleccionar Repartidor / Empleado: *</strong></label>
+              <select
+                id="waEmpSelect"
+                class="form-control"
+                [ngModel]="whatsappSelectedEmployeeId()"
+                (ngModelChange)="onWhatsAppEmployeeChange($event)"
+                [disabled]="isSendingWhatsApp()"
+              >
+                <option [ngValue]="null" disabled>-- Elige un empleado --</option>
+                @for (emp of whatsappEmployees(); track emp.id) {
+                  <option [ngValue]="emp.id">
+                    {{ emp.name }} ({{ emp.role }}) - {{ emp.phone }}
+                  </option>
+                }
+              </select>
+            </div>
+          }
+
+          @if (whatsappStatus(); as st) {
+            <div
+              class="alert"
+              [class.alert-success]="st.type === 'success'"
+              [class.alert-error]="st.type === 'error'"
+              style="margin-top: 0.85rem;"
+            >
+              {{ st.type === 'success' ? '✅' : '❌' }} {{ st.message }}
+            </div>
+          }
+
+          <div class="form-group" style="margin-top: 0.85rem;">
+            <div class="textarea-head">
+              <label for="waMsg"><strong>Mensaje a enviar:</strong></label>
+              <button
+                type="button"
+                class="btn-text-action"
+                (click)="refreshWhatsAppMessagePreview()"
+                [disabled]="isSendingWhatsApp()"
+              >
+                🔄 Restaurar plantilla
+              </button>
+            </div>
+            <textarea
+              id="waMsg"
+              rows="6"
+              class="form-control wa-textarea"
+              [(ngModel)]="whatsappMessageText"
+              [disabled]="isSendingWhatsApp()"
+            ></textarea>
+            <small class="help-text">
+              Puedes editar el mensaje antes de enviarlo. El texto admite formato de WhatsApp (*negrita*, etc.).
+            </small>
+          </div>
+        </div>
+
+        <div class="confirm-actions">
+          <button
+            type="button"
+            class="btn btn-outline"
+            (click)="openDirectWhatsAppWeb(order, whatsappRecipientType())"
+            title="Abrir WhatsApp Web directamente con el mensaje redactado"
+          >
+            🌐 Abrir en WhatsApp Web
+          </button>
+          <button
+            type="button"
+            class="btn btn-success"
+            (click)="sendOrderWhatsApp()"
+            [disabled]="isSendingWhatsApp() || !whatsappMessageText().trim() || (whatsappRecipientType() === 'employee' && !whatsappSelectedEmployeeId())"
+          >
+            {{ isSendingWhatsApp() ? '⏳ Enviando...' : '🚀 Enviar desde el Sistema' }}
           </button>
         </div>
       </div>

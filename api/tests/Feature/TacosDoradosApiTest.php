@@ -592,6 +592,17 @@ class TacosDoradosApiTest extends TestCase
         $this->assertEquals('CONNECTED', $qrResp->json('status'));
         $this->assertEquals('5213320536289', $qrResp->json('phone'));
 
+        // 5.5 Probar envío de mensaje de prueba
+        $testMsgResp = $this->withToken($token)
+            ->postJson("/api/whatsapp/devices/{$deviceId1}/test-message", [
+                'numero' => '3312345678',
+                'mensaje' => '¡Hola! Este es un mensaje de prueba',
+            ])
+            ->assertOk();
+
+        $this->assertTrue($testMsgResp->json('success'));
+        $this->assertEquals('¡Mensaje de prueba enviado exitosamente!', $testMsgResp->json('message'));
+
         // 6. Configuración de URL de WhatsApp
         $this->withToken($token)
             ->putJson('/api/whatsapp/settings', [
@@ -606,6 +617,118 @@ class TacosDoradosApiTest extends TestCase
             ->assertOk();
 
         $this->assertDatabaseMissing('whatsapp_devices', ['id' => $deviceId2]);
+    }
+
+    public function test_employee_catalog_crud_and_order_whatsapp(): void
+    {
+        $token = $this->authenticate();
+
+        \Illuminate\Support\Facades\Http::fake([
+            '*/sessions/*/send-message' => \Illuminate\Support\Facades\Http::response([
+                'success' => true,
+                'messageId' => 'test-msg-123',
+                'status' => 'sent',
+            ], 200),
+        ]);
+
+        // 1. Crear dispositivo WhatsApp conectado
+        \App\Models\WhatsAppDevice::create([
+            'session_id' => 'sesion_prueba',
+            'name' => 'Línea Pedidos',
+            'status' => 'CONNECTED',
+            'phone' => '5213320536289',
+            'is_default' => true,
+        ]);
+
+        // 2. Crear empleado
+        $empResp = $this->withToken($token)
+            ->postJson('/api/employees', [
+                'name' => 'Juan Repartidor',
+                'phone' => '3311223344',
+                'role' => 'repartidor',
+                'notes' => 'Turno vespertino',
+            ])
+            ->assertStatus(201)
+            ->json();
+
+        $employeeId = $empResp['id'];
+        $this->assertEquals('Juan Repartidor', $empResp['name']);
+        $this->assertEquals('repartidor', $empResp['role']);
+
+        // 3. Listar empleados
+        $listResp = $this->withToken($token)
+            ->getJson('/api/employees')
+            ->assertOk()
+            ->json();
+
+        $this->assertNotEmpty($listResp);
+        $this->assertEquals('Juan Repartidor', $listResp[0]['name']);
+
+        // 4. Toggle activo
+        $this->withToken($token)
+            ->patchJson("/api/employees/{$employeeId}/toggle-active")
+            ->assertOk()
+            ->assertJsonPath('is_active', false);
+
+        // 5. Crear pedido asignado al empleado
+        $taco = \App\Models\Product::first() ?? \App\Models\Product::create([
+            'name' => 'Taco de Papa',
+            'price' => 15.0,
+            'category' => 'tacos',
+            'is_active' => true,
+        ]);
+        $orderResp = $this->withToken($token)
+            ->postJson('/api/orders', [
+                'customer_phone' => '3399887766',
+                'customer_name' => 'Ana Martínez',
+                'delivery_address' => 'Calle Falsa 123',
+                'delivery_references' => 'Casa blanca portón negro',
+                'delivery_date' => now()->toDateString(),
+                'delivery_time' => '15:30',
+                'assigned_employee_id' => $employeeId,
+                'items' => [
+                    [
+                        'item_type' => 'product',
+                        'product_id' => $taco->id,
+                        'product_name' => $taco->name,
+                        'quantity' => 15,
+                        'is_promo' => false,
+                    ],
+                ],
+            ])
+            ->assertStatus(201)
+            ->json();
+
+        $orderId = $orderResp['id'];
+        $this->assertEquals($employeeId, $orderResp['assigned_employee_id']);
+
+        // 6. Enviar WhatsApp al Cliente
+        $waClientResp = $this->withToken($token)
+            ->postJson("/api/orders/{$orderId}/whatsapp", [
+                'recipient_type' => 'customer',
+            ])
+            ->assertOk();
+
+        $this->assertTrue($waClientResp->json('success'));
+        $this->assertStringContainsString('5213399887766', $waClientResp->json('recipient'));
+
+        // 7. Enviar WhatsApp al Repartidor (Empleado)
+        $waEmpResp = $this->withToken($token)
+            ->postJson("/api/orders/{$orderId}/whatsapp", [
+                'recipient_type' => 'employee',
+                'employee_id' => $employeeId,
+            ])
+            ->assertOk();
+
+        $this->assertTrue($waEmpResp->json('success'));
+        $this->assertStringContainsString('5213311223344', $waEmpResp->json('recipient'));
+
+        // 8. Eliminar empleado
+        $this->withToken($token)
+            ->deleteJson("/api/employees/{$employeeId}")
+            ->assertOk();
+
+        $this->assertDatabaseMissing('employees', ['id' => $employeeId]);
     }
 
     private function authenticate(): string

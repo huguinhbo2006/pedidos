@@ -497,3 +497,131 @@
 .text-danger {
   color: var(--brand-danger);
 }
+
+.assigned-employee-pill {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+  font-size: 0.82rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: var(--radius-sm);
+  margin-top: 0.35rem;
+}
+
+.btn-whatsapp-btn {
+  background: #25d366;
+  color: #fff;
+  border: 1px solid #20ba5a;
+  font-weight: 700;
+
+  &:hover {
+    background: #20ba5a;
+    color: #fff;
+  }
+}
+
+.wa-modal-panel {
+  max-width: 580px;
+
+  .wa-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #f0fdf4;
+
+    .wa-header-left {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+
+      .wa-big-icon {
+        font-size: 1.85rem;
+        line-height: 1;
+      }
+    }
+
+    .btn-close {
+      border: none;
+      background: transparent;
+      font-size: 1.15rem;
+      cursor: pointer;
+      color: var(--text-muted);
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+
+      &:hover {
+        background: rgba(0, 0, 0, 0.05);
+        color: var(--text-primary);
+      }
+    }
+  }
+
+  .wa-recipient-selector {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.65rem;
+
+    .selector-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.2rem;
+      padding: 0.65rem 0.5rem;
+      background: var(--bg-subtle);
+      border: 2px solid transparent;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 0.9rem;
+      transition: all 0.15s ease;
+
+      small {
+        font-size: 0.76rem;
+        font-weight: 500;
+        color: var(--text-secondary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 100%;
+      }
+
+      &.active {
+        background: #e6f4ea;
+        border-color: #25d366;
+        color: #137333;
+
+        small {
+          color: #1b5e20;
+        }
+      }
+    }
+  }
+
+  .textarea-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.35rem;
+
+    .btn-text-action {
+      background: none;
+      border: none;
+      color: var(--brand-primary);
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 0;
+
+      &:hover {
+        text-decoration: underline;
+      }
+    }
+  }
+
+  .wa-textarea {
+    font-family: inherit;
+    font-size: 0.88rem;
+    line-height: 1.45;
+    resize: vertical;
+  }
+}

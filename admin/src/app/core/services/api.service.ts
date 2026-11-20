@@ -6,6 +6,7 @@ import {
   AddressSuggestion,
   Customer,
   CustomerPhoneLookupResponse,
+  Employee,
   MapsConfig,
   MealPackage,
   Order,
@@ -30,6 +31,7 @@ export interface CreateOrderPayload {
   delivery_lng?: number | null;
   address_label?: string | null;
   notes?: string | null;
+  assigned_employee_id?: number | null;
   applied_promotion_ids?: number[];
   manual_discount_type?: 'fixed' | 'percent' | null;
   manual_discount_value?: number | null;
@@ -249,6 +251,13 @@ export class ApiService {
     return this.http.patch<WhatsAppDevice>(`${this.apiUrl}/whatsapp/devices/${deviceId}/default`, {});
   }
 
+  sendWhatsAppTestMessage(deviceId: number, data: { numero: string; mensaje: string }): Observable<{ success: boolean; message: string; data?: any }> {
+    return this.http.post<{ success: boolean; message: string; data?: any }>(
+      `${this.apiUrl}/whatsapp/devices/${deviceId}/test-message`,
+      data
+    );
+  }
+
   deleteWhatsAppDevice(deviceId: number): Observable<{ message: string }> {
     return this.http.delete<{ message: string }>(`${this.apiUrl}/whatsapp/devices/${deviceId}`);
   }
@@ -257,5 +266,56 @@ export class ApiService {
     return this.http.put<{ message: string; whatsapp_api_url: string }>(`${this.apiUrl}/whatsapp/settings`, {
       whatsapp_api_url: apiUrl,
     });
+  }
+
+  // Employees Catalog
+  getEmployees(activeOnly = false): Observable<Employee[]> {
+    let params = new HttpParams();
+    if (activeOnly) {
+      params = params.set('active_only', '1');
+    }
+    return this.http.get<Employee[]>(`${this.apiUrl}/employees`, { params });
+  }
+
+  createEmployee(data: Partial<Employee>): Observable<Employee> {
+    return this.http.post<Employee>(`${this.apiUrl}/employees`, data);
+  }
+
+  updateEmployee(id: number, data: Partial<Employee>): Observable<Employee> {
+    return this.http.put<Employee>(`${this.apiUrl}/employees/${id}`, data);
+  }
+
+  toggleEmployeeActive(id: number): Observable<Employee> {
+    return this.http.patch<Employee>(`${this.apiUrl}/employees/${id}/toggle-active`, {});
+  }
+
+  deleteEmployee(id: number): Observable<{ message: string }> {
+    return this.http.delete<{ message: string }>(`${this.apiUrl}/employees/${id}`);
+  }
+
+  // Order WhatsApp Messaging
+  sendOrderWhatsApp(
+    orderId: number,
+    payload: {
+      recipient_type: 'customer' | 'employee' | 'custom';
+      phone?: string;
+      employee_id?: number;
+      device_id?: number;
+      message?: string;
+    }
+  ): Observable<{
+    success: boolean;
+    message: string;
+    device?: string;
+    recipient?: string;
+    sent_text?: string;
+  }> {
+    return this.http.post<{
+      success: boolean;
+      message: string;
+      device?: string;
+      recipient?: string;
+      sent_text?: string;
+    }>(`${this.apiUrl}/orders/${orderId}/whatsapp`, payload);
   }
 }

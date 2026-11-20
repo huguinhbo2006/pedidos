@@ -58,6 +58,7 @@
 - **Backend:** `WhatsAppDeviceController.php` conectado al microservicio de Railway (`https://whatsapp-api-production-80b7.up.railway.app`):
   - `GET /api/whatsapp/devices`: Lista dispositivos y sincroniza en vivo los estados con Railway.
   - `POST /api/whatsapp/devices`: Crea dispositivo y solicita QR en tiempo real.
+  - `POST /api/whatsapp/devices/{id}/test-message`: Enviar mensaje de prueba con número y texto personalizado.
   - `GET /api/whatsapp/devices/{id}/qr`: Consulta QR y auto-detecta estado de vinculación.
   - `GET /api/whatsapp/devices/{id}/sync`: Sincroniza estado de conexión en vivo.
   - `PATCH /api/whatsapp/devices/{id}/default`: Marca la línea como predeterminada/principal.
@@ -67,21 +68,28 @@
   - Nuevo enlace en el menú de navegación: **💬 WhatsApp**.
   - Pantalla con tarjetas de dispositivos vinculados, estado `🟢 En línea` / `⚪ Desconectado`, badge de `⭐ Principal` y número telefónico vinculado.
   - **Modal interactivo de vinculación:** Escribes el nombre/alias, se genera el código QR en vivo, y al escanearlo con el celular, el modal lo detecta automáticamente cada 2.8s y muestra la confirmación de conexión en verde.
+  - **Modal de prueba de envío:** Botón `✉️ Testear Mensaje` en cada línea conectada que abre un modal para ingresar número telefónico destino y mensaje personalizado con reporte en vivo del envío.
   - Modal de configuración para modificar la URL de Railway si fuera necesario.
 
-### F. Estado de Pruebas y Compilación
-- **Laravel (`php artisan test`):** `10 passed (119 assertions)` en `api/tests/Feature/TacosDoradosApiTest.php`.
-- **Angular (`npm run build`):** compila limpio en 3.9s con `0` errores y `0` advertencias.
+### F. Catálogo de Empleados y Notificaciones de Pedidos por WhatsApp
+- **Base de Datos:**
+  - Migración `2026_11_20_030000_create_employees_table.php` (tabla `employees` y columna `assigned_employee_id` en `orders`).
+  - Modelos `Employee.php` y relación en `Order.php`.
+- **Backend:**
+  - `EmployeeController.php`: CRUD completo (`GET /api/employees`, `POST /api/employees`, `PUT /api/employees/{id}`, `PATCH /api/employees/{id}/toggle-active`, `DELETE /api/employees/{id}`).
+  - `POST /api/orders/{order}/whatsapp`: Envío automático con plantillas profesionales:
+    - **Al Cliente:** Folio, fecha, hora estimada, domicilio, referencias, detalle de productos y total a pagar.
+    - **Al Repartidor:** Datos del cliente, teléfono, dirección, enlace con coordenadas a Google Maps, productos y monto exacto a cobrar en la entrega.
+- **Frontend Angular:**
+  - Módulo `/empleados` con listado de personal, roles (`🛵 Repartidor`, `👨‍🍳 Cocina`, `💵 Caja`, `🌮 Mostrador`), modal para dar de alta/editar, switch de estado activo/inactivo, y botón para enviar WhatsApp directo al empleado.
+  - Enlace `🛵 Empleados` en la barra superior de navegación.
+  - Selector de repartidor asignado en `Nuevo Pedido` (Paso 2).
+  - En `Pedidos del Día`: insignia del repartidor asignado y botón `💬 WhatsApp` en cada pedido para enviar avisos al cliente o al repartidor con vista previa editable.
+
+### G. Estado de Pruebas y Compilación
+- **Laravel (`php artisan test`):** `11 passed (141 assertions)` en `api/tests/Feature/TacosDoradosApiTest.php`.
+- **Angular (`npm run build`):** compila limpio en 4.3s con `0` errores y `0` advertencias.
 - **Despliegues Git:**
-  - Microservicio Railway `whatsapp-api`: actualizado y verificado en producción (`https://whatsapp-api-production-80b7.up.railway.app/health`).
-  - Proyecto `pedidos`: subido a GitHub `origin main` (disparando GitHub Actions para Laravel y Angular hacia Hostinger).
-
----
-
-## 3. Próximos pasos (Fase 2)
-1. **Catálogo sencillo de empleados:**
-   - Nombre, celular/WhatsApp, rol (repartidor/cocina/caja) y notas.
-2. **Envío de mensajes WhatsApp:**
-   - Envío de comprobante/ticket de pedido y confirmación a clientes.
-   - Notificación de asignación de entrega a empleados repartidores con dirección y enlace a Google Maps.
+  - Microservicio Railway `whatsapp-api`: verificado en producción (`https://whatsapp-api-production-80b7.up.railway.app/health`).
+  - Proyecto `pedidos`: subido a GitHub `origin main` (Hostinger).
 

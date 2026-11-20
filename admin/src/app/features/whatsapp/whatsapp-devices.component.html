@@ -129,7 +129,17 @@
             </div>
 
             <div class="foot-right">
-              @if (device.status !== 'CONNECTED') {
+              @if (device.status === 'CONNECTED') {
+                <button
+                  type="button"
+                  class="btn btn-primary btn-sm"
+                  (click)="openTestModal(device)"
+                  [disabled]="isActionBusy()"
+                  title="Enviar un mensaje de prueba desde esta línea"
+                >
+                  ✉️ Testear Mensaje
+                </button>
+              } @else {
                 <button
                   type="button"
                   class="btn btn-primary btn-sm"
@@ -360,6 +370,101 @@
             [disabled]="isActionBusy()"
           >
             {{ isActionBusy() ? 'Desvinculando...' : '🗑️ Sí, desvincular' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- MODAL: TESTEAR MENSAJE DE WHATSAPP -->
+  @if (testModalOpen() && testTargetDevice(); as targetDev) {
+    <div class="modal-backdrop" (click)="closeTestModal()">
+      <div class="modal-panel" (click)="$event.stopPropagation()">
+        <div class="modal-head">
+          <div class="head-title">
+            <span class="icon">✉️</span>
+            <div>
+              <h3>Probar Envío de Mensaje</h3>
+              <p>Envía un WhatsApp de prueba desde: <strong>{{ targetDev.name }}</strong></p>
+            </div>
+          </div>
+          <button type="button" class="btn-close" (click)="closeTestModal()" [disabled]="isSendingTest()">✕</button>
+        </div>
+
+        <div class="modal-body">
+          <div class="device-sender-banner">
+            <span class="wa-badge">Línea remitente:</span>
+            <strong>{{ targetDev.name }}</strong>
+            <span class="sender-phone">
+              @if (targetDev.phone) {
+                ({{ formatPhone(targetDev.phone) }})
+              }
+            </span>
+            <span
+              class="status-dot"
+              [class.dot-online]="targetDev.status === 'CONNECTED'"
+              [class.dot-offline]="targetDev.status !== 'CONNECTED'"
+            >
+              {{ targetDev.status === 'CONNECTED' ? '● En línea' : '○ Desconectado' }}
+            </span>
+          </div>
+
+          @if (testStatusAlert(); as alert) {
+            <div
+              class="alert"
+              [class.alert-success]="alert.type === 'success'"
+              [class.alert-error]="alert.type === 'error'"
+              style="margin-bottom: 1rem;"
+            >
+              {{ alert.type === 'success' ? '✅' : '❌' }} {{ alert.message }}
+            </div>
+          }
+
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label for="testPhone"><strong>Número de WhatsApp destino:</strong></label>
+            <input
+              id="testPhone"
+              type="tel"
+              class="form-control"
+              [(ngModel)]="testPhone"
+              placeholder="Ej. 3312345678 o 523312345678"
+              [disabled]="isSendingTest()"
+              autofocus
+            />
+            <small class="help-text">
+              Introduce el número celular a 10 dígitos (México) o en formato internacional.
+            </small>
+          </div>
+
+          <div class="form-group">
+            <label for="testMessage"><strong>Mensaje a enviar:</strong></label>
+            <textarea
+              id="testMessage"
+              rows="3"
+              class="form-control"
+              [(ngModel)]="testMessageText"
+              placeholder="Escribe el texto de prueba aquí..."
+              [disabled]="isSendingTest()"
+            ></textarea>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button
+            type="button"
+            class="btn btn-outline"
+            (click)="closeTestModal()"
+            [disabled]="isSendingTest()"
+          >
+            Cerrar
+          </button>
+          <button
+            type="button"
+            class="btn btn-primary"
+            (click)="sendTestMessage()"
+            [disabled]="isSendingTest() || !testPhone().trim() || !testMessageText().trim()"
+          >
+            {{ isSendingTest() ? '⏳ Enviando...' : '🚀 Enviar Mensaje' }}
           </button>
         </div>
       </div>

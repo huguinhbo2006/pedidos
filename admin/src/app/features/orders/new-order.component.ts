@@ -8,6 +8,7 @@ import { ToastService } from '../../core/services/toast.service';
 import {
   Customer,
   CustomerAddress,
+  Employee,
   MealPackage,
   PackageSelectionItem,
   Product,
@@ -92,6 +93,8 @@ export class NewOrderComponent implements OnInit, OnDestroy {
   // Delivery time & Order notes
   readonly deliveryTimeMode = signal<'asap' | 'scheduled'>('asap');
   readonly scheduledDeliveryTime = signal<string>('');
+  readonly employees = signal<Employee[]>([]);
+  readonly assignedEmployeeId = signal<number | null>(null);
   orderNotes = '';
 
   // Catalog, Packages & Promotions
@@ -384,6 +387,9 @@ export class NewOrderComponent implements OnInit, OnDestroy {
     this.api.getPromotions(true).subscribe({
       next: (list) => this.promotions.set(list),
     });
+    this.api.getEmployees(true).subscribe({
+      next: (list) => this.employees.set(list),
+    });
   }
 
   onPhoneChange(value: string): void {
@@ -467,6 +473,7 @@ export class NewOrderComponent implements OnInit, OnDestroy {
         this.selectedAddressId.set(order.customer_address_id);
         this.savedAddressReferences = order.delivery_references || '';
         this.orderNotes = order.notes || '';
+        this.assignedEmployeeId.set(order.assigned_employee_id ?? null);
 
         if (order.manual_discount_type) {
           this.manualDiscountType.set(order.manual_discount_type);
@@ -1060,6 +1067,7 @@ export class NewOrderComponent implements OnInit, OnDestroy {
       delivery_lng: usingSaved ? savedAddr.longitude : this.newAddressLng,
       address_label: usingSaved ? savedAddr.label : this.newAddressLabel.trim() || null,
       notes: this.orderNotes.trim() || null,
+      assigned_employee_id: this.assignedEmployeeId(),
       applied_promotion_ids: this.selectedQualifyingDiscounts().map((q) => q.promo.id),
       manual_discount_type: this.manualDiscountAmount() > 0 ? this.manualDiscountType() : null,
       manual_discount_value: this.manualDiscountAmount() > 0 ? this.manualDiscountValue() : null,

@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CustomerController;
+use App\Http\Controllers\Api\EmployeeController;
 use App\Http\Controllers\Api\MapsSettingsController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PackageController;
@@ -55,7 +56,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/orders/{order}', [OrderController::class, 'update']);
     Route::delete('/orders/{order}', [OrderController::class, 'destroy']);
     Route::get('/orders/{order}/pdf', [OrderController::class, 'pdf']);
+    Route::post('/orders/{order}/whatsapp', [OrderController::class, 'sendWhatsApp']);
     Route::patch('/orders/{order}/deliver', [OrderController::class, 'deliver']);
+
+    // Employees Catalog
+    Route::apiResource('employees', EmployeeController::class);
+    Route::patch('/employees/{employee}/toggle-active', [EmployeeController::class, 'toggleActive']);
 
     // Google Maps Settings & Fallback Search
     Route::get('/settings/maps', [MapsSettingsController::class, 'show']);
@@ -68,6 +74,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/whatsapp/devices/{device}/qr', [WhatsAppDeviceController::class, 'getQr']);
     Route::get('/whatsapp/devices/{device}/sync', [WhatsAppDeviceController::class, 'syncStatus']);
     Route::patch('/whatsapp/devices/{device}/default', [WhatsAppDeviceController::class, 'setDefault']);
+    Route::post('/whatsapp/devices/{device}/test-message', [WhatsAppDeviceController::class, 'testMessage']);
     Route::delete('/whatsapp/devices/{device}', [WhatsAppDeviceController::class, 'destroy']);
     Route::get('/whatsapp/settings', [WhatsAppDeviceController::class, 'getSettings']);
     Route::put('/whatsapp/settings', [WhatsAppDeviceController::class, 'updateSettings']);

@@ -31,6 +31,7 @@ class Order extends Model
         'manual_discount_reason',
         'total',
         'notes',
+        'assigned_employee_id',
         'is_delivered',
         'delivered_at',
         'created_by',
@@ -72,5 +73,10 @@ class Order extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function assignedEmployee(): BelongsTo
+    {
+        return $this->belongsTo(Employee::class, 'assigned_employee_id');
     }
 }

@@ -450,3 +450,44 @@
     color: var(--text-secondary);
   }
 }
+
+.device-sender-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: 0.65rem 0.85rem;
+  margin-bottom: 1.15rem;
+  font-size: 0.88rem;
+
+  .wa-badge {
+    background: #e6f4ea;
+    color: #137333;
+    font-weight: 700;
+    font-size: 0.76rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+  }
+
+  .sender-phone {
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+  }
+
+  .status-dot {
+    margin-left: auto;
+    font-size: 0.8rem;
+    font-weight: 700;
+
+    &.dot-online {
+      color: var(--brand-green);
+    }
+
+    &.dot-offline {
+      color: var(--text-muted);
+    }
+  }
+}

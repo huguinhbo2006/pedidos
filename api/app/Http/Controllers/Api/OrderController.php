@@ -3,18 +3,22 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AppSetting;
 use App\Models\Customer;
 use App\Models\CustomerAddress;
+use App\Models\Employee;
 use App\Models\Order;
 use App\Models\Package;
 use App\Models\Product;
 use App\Models\Promotion;
+use App\Models\WhatsAppDevice;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
 
 class OrderController extends Controller
@@ -39,7 +43,7 @@ class OrderController extends Controller
             ->get(['id', 'is_delivered', 'total', 'delivery_date']);
 
         $pendingQuery = Order::query()
-            ->with(['items'])
+            ->with(['items', 'assignedEmployee'])
             ->where('is_delivered', false)
             ->where($forTodayScope);
 
@@ -59,7 +63,7 @@ class OrderController extends Controller
 
         // Upcoming orders (scheduled for future dates)
         $upcomingQuery = Order::query()
-            ->with(['items'])
+            ->with(['items', 'assignedEmployee'])
             ->where('is_delivered', false)
             ->whereDate('delivery_date', '>', $todayStr);
 
@@ -104,7 +108,7 @@ class OrderController extends Controller
     {
         $todayStr = Carbon::today()->toDateString();
         $query = Order::query()
-            ->with(['items'])
+            ->with(['items', 'assignedEmployee'])
             ->where('is_delivered', false)
             ->whereDate('delivery_date', '>', $todayStr);
 
@@ -128,7 +132,7 @@ class OrderController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $query = Order::query()->with(['items']);
+        $query = Order::query()->with(['items', 'assignedEmployee']);
 
         if ($date = trim((string) $request->query('date', ''))) {
             $dayStr = Carbon::parse($date)->toDateString();
@@ -169,7 +173,7 @@ class OrderController extends Controller
 
     public function show(Order $order): JsonResponse
     {
-        return response()->json($order->load(['items', 'customer.addresses']));
+        return response()->json($order->load(['items', 'customer.addresses', 'assignedEmployee']));
     }
 
     public function store(Request $request): JsonResponse
@@ -250,6 +254,7 @@ class OrderController extends Controller
             'delivery_lng' => ['nullable', 'numeric', 'between:-180,180'],
             'address_label' => ['nullable', 'string', 'max:60'],
             'notes' => ['nullable', 'string', 'max:1000'],
+            'assigned_employee_id' => ['nullable', 'integer', 'exists:employees,id'],
             'applied_promotion_ids' => ['nullable', 'array'],
             'applied_promotion_ids.*' => ['integer', 'exists:promotions,id'],
             'manual_discount_type' => ['nullable', 'in:fixed,percent'],
@@ -543,12 +548,13 @@ class OrderController extends Controller
                     'manual_discount_reason' => $manualReason,
                     'total' => $finalTotal,
                     'notes' => $notes,
+                    'assigned_employee_id' => array_key_exists('assigned_employee_id', $data) ? $data['assigned_employee_id'] : $existingOrder->assigned_employee_id,
                 ]);
 
                 $existingOrder->items()->delete();
                 $existingOrder->items()->createMany($preparedItems);
 
-                return $existingOrder->fresh()->load(['items', 'customer.addresses']);
+                return $existingOrder->fresh()->load(['items', 'customer.addresses', 'assignedEmployee']);
             }
 
             // 6. Generate unique daily order number for new order
@@ -587,13 +593,14 @@ class OrderController extends Controller
                 'manual_discount_reason' => $manualReason,
                 'total' => $finalTotal,
                 'notes' => $notes,
+                'assigned_employee_id' => $data['assigned_employee_id'] ?? null,
                 'is_delivered' => false,
                 'created_by' => $request->user()?->id,
             ]);
 
             $order->items()->createMany($preparedItems);
 
-            return $order->load(['items', 'customer.addresses']);
+            return $order->load(['items', 'customer.addresses', 'assignedEmployee']);
         });
     }
 
@@ -754,5 +761,164 @@ class OrderController extends Controller
         }
 
         return [$normalized, round($extraSum, 2)];
+    }
+
+    public function sendWhatsApp(Request $request, Order $order): JsonResponse
+    {
+        $request->validate([
+            'recipient_type' => ['required', 'in:customer,employee,custom'],
+            'phone' => ['nullable', 'string', 'min:8', 'max:25'],
+            'employee_id' => ['nullable', 'integer', 'exists:employees,id'],
+            'device_id' => ['nullable', 'integer', 'exists:whatsapp_devices,id'],
+            'message' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $order->load(['items', 'assignedEmployee']);
+
+        $recipientType = $request->input('recipient_type');
+        $targetPhone = $request->input('phone');
+        $employee = null;
+
+        if ($recipientType === 'employee') {
+            $employeeId = $request->input('employee_id') ?: $order->assigned_employee_id;
+            if (! $employeeId) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'No se seleccionó ningún empleado para enviar la notificación.',
+                ], 422);
+            }
+            $employee = Employee::find($employeeId);
+            if (! $employee) {
+                return response()->json(['success' => false, 'error' => 'Empleado no encontrado.'], 404);
+            }
+            $targetPhone = $targetPhone ?: $employee->phone;
+        } elseif ($recipientType === 'customer') {
+            $targetPhone = $targetPhone ?: $order->customer_phone;
+        }
+
+        if (empty($targetPhone)) {
+            return response()->json([
+                'success' => false,
+                'error' => 'No se especificó un número de teléfono destino.',
+            ], 422);
+        }
+
+        $cleanNumber = preg_replace('/\D/', '', $targetPhone);
+        if (strlen($cleanNumber) < 8) {
+            return response()->json([
+                'success' => false,
+                'error' => 'El número de teléfono debe tener al menos 8 dígitos.',
+            ], 422);
+        }
+
+        if (strlen($cleanNumber) === 10) {
+            $cleanNumber = '521' . $cleanNumber;
+        } elseif (strlen($cleanNumber) === 12 && str_starts_with($cleanNumber, '52') && !str_starts_with($cleanNumber, '521')) {
+            $cleanNumber = '521' . substr($cleanNumber, 2);
+        }
+
+        $deviceId = $request->input('device_id');
+        $device = null;
+        if ($deviceId) {
+            $device = WhatsAppDevice::find($deviceId);
+        }
+        if (! $device) {
+            $device = WhatsAppDevice::where('status', 'CONNECTED')->where('is_default', true)->first()
+                ?: WhatsAppDevice::where('status', 'CONNECTED')->first()
+                ?: WhatsAppDevice::where('is_default', true)->first()
+                ?: WhatsAppDevice::first();
+        }
+
+        if (! $device) {
+            return response()->json([
+                'success' => false,
+                'error' => 'No hay ningún dispositivo de WhatsApp configurado en el sistema. Vincula una línea en la sección WhatsApp.',
+            ], 422);
+        }
+
+        $messageText = trim((string) $request->input('message'));
+        if (empty($messageText)) {
+            $messageText = $this->buildOrderWhatsAppTemplate($order, $recipientType, $employee);
+        }
+
+        $savedUrl = AppSetting::getValue('whatsapp_api_url');
+        $apiUrl = rtrim($savedUrl ?: env('WHATSAPP_API_URL', 'https://whatsapp-api-production-80b7.up.railway.app'), '/');
+
+        try {
+            $response = Http::timeout(15)->post("{$apiUrl}/sessions/{$device->session_id}/send-message", [
+                'numero' => $cleanNumber,
+                'mensaje' => $messageText,
+            ]);
+
+            if ($response->successful()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => '¡Mensaje de WhatsApp enviado exitosamente!',
+                    'device' => $device->name,
+                    'recipient' => $cleanNumber,
+                    'sent_text' => $messageText,
+                ]);
+            }
+
+            $errMsg = $response->json('error') ?: 'El servicio de WhatsApp no pudo entregar el mensaje. Verifica que la línea esté conectada.';
+            return response()->json([
+                'success' => false,
+                'error' => $errMsg,
+            ], 422);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Error de conexión con el servicio de WhatsApp en Railway: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    private function buildOrderWhatsAppTemplate(Order $order, string $type, ?Employee $employee = null): string
+    {
+        $dateStr = $order->delivery_date ? Carbon::parse($order->delivery_date)->format('d/m/Y') : Carbon::today()->format('d/m/Y');
+        $timeStr = $order->delivery_time ?: 'Horario habitual';
+        $itemsList = '';
+        foreach ($order->items as $item) {
+            $promoTag = $item->is_promo ? ' (PROMO)' : '';
+            $itemsList .= "• {$item->quantity}x {$item->product_name}{$promoTag} - $" . number_format($item->line_total, 2) . "\n";
+        }
+
+        if ($type === 'employee') {
+            $mapsUrl = '';
+            if ($order->delivery_lat && $order->delivery_lng) {
+                $mapsUrl = "\n🗺️ *Ubicación Maps:* https://www.google.com/maps/search/?api=1&query={$order->delivery_lat},{$order->delivery_lng}";
+            } else {
+                $query = urlencode($order->delivery_address);
+                $mapsUrl = "\n🗺️ *Buscar en Maps:* https://www.google.com/maps/search/?api=1&query={$query}";
+            }
+
+            return "🛵 *ENTREGA ASIGNADA — TAQUERÍA MARY* 🛵\n\n"
+                . "📋 *Pedido:* #{$order->order_number}\n"
+                . "📅 *Fecha:* {$dateStr}\n"
+                . "⏰ *Hora de entrega:* {$timeStr}\n\n"
+                . "👤 *Cliente:* {$order->customer_name}\n"
+                . "📞 *Tel:* {$order->customer_phone}\n"
+                . "📍 *Dirección:* {$order->delivery_address}"
+                . ($order->delivery_references ? "\n📝 *Ref:* {$order->delivery_references}" : '')
+                . $mapsUrl . "\n\n"
+                . "🌮 *Detalle del pedido:*\n"
+                . $itemsList . "\n"
+                . "💵 *COBRO AL ENTREGAR:* $" . number_format($order->total, 2) . " MXN"
+                . ($order->notes ? "\n💬 *Notas:* {$order->notes}" : '');
+        }
+
+        return "🌮 *TAQUERÍA MARY* 🌮\n"
+            . "¡Hola, *{$order->customer_name}*! Confirmamos tu pedido.\n\n"
+            . "📋 *Pedido:* #{$order->order_number}\n"
+            . "📅 *Fecha de entrega:* {$dateStr}\n"
+            . "⏰ *Hora estimada:* {$timeStr}\n"
+            . "📍 *Dirección:* {$order->delivery_address}"
+            . ($order->delivery_references ? " (Ref: {$order->delivery_references})" : '') . "\n\n"
+            . "🌮 *Tu orden:*\n"
+            . $itemsList . "\n"
+            . "💰 *Total a pagar:* $" . number_format($order->total, 2) . " MXN"
+            . ($order->promo_savings > 0 ? " (Ahorro promocional: $" . number_format($order->promo_savings, 2) . ")" : '')
+            . ($order->notes ? "\n💬 *Notas:* {$order->notes}" : '') . "\n\n"
+            . "¡Muchas gracias por tu preferencia! 🙌";
     }
 }

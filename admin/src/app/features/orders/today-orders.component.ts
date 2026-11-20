@@ -5,7 +5,7 @@ import { RouterLink } from '@angular/router';
 import { Subject, Subscription, debounceTime, distinctUntilChanged } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
-import { Order, TodayOrdersResponse } from '../../core/models/api.models';
+import { Employee, Order, TodayOrdersResponse, WhatsAppDevice } from '../../core/models/api.models';
 
 @Component({
   selector: 'app-today-orders',
@@ -38,6 +38,17 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
   readonly deletingOrder = signal<Order | null>(null);
   readonly isDeleting = signal(false);
   readonly downloadingPdfId = signal<number | null>(null);
+
+  // WhatsApp Notification Modal State
+  readonly whatsappModalOpen = signal(false);
+  readonly whatsappTargetOrder = signal<Order | null>(null);
+  readonly whatsappRecipientType = signal<'customer' | 'employee'>('customer');
+  readonly whatsappEmployees = signal<Employee[]>([]);
+  readonly whatsappSelectedEmployeeId = signal<number | null>(null);
+  readonly whatsappDevices = signal<WhatsAppDevice[]>([]);
+  readonly whatsappMessageText = signal('');
+  readonly isSendingWhatsApp = signal(false);
+  readonly whatsappStatus = signal<{ type: 'success' | 'error'; message: string } | null>(null);
 
   readonly displayedOrders = computed(() =>
     this.activeTab() === 'today' ? this.orders() : this.upcomingOrders()
@@ -202,5 +213,154 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
       style: 'currency',
       currency: 'MXN',
     }).format(amount ?? 0);
+  }
+
+  // --- WhatsApp Order Notifications ---
+  openWhatsAppModal(order: Order, defaultType: 'customer' | 'employee' = 'customer'): void {
+    this.whatsappTargetOrder.set(order);
+    this.whatsappRecipientType.set(defaultType);
+    this.whatsappStatus.set(null);
+    this.whatsappSelectedEmployeeId.set(order.assigned_employee_id ?? null);
+
+    if (this.whatsappEmployees().length === 0) {
+      this.api.getEmployees(true).subscribe({
+        next: (emps) => {
+          this.whatsappEmployees.set(emps);
+          if (!this.whatsappSelectedEmployeeId() && emps.length > 0) {
+            this.whatsappSelectedEmployeeId.set(emps[0].id);
+          }
+          this.refreshWhatsAppMessagePreview();
+        },
+      });
+    }
+
+    if (this.whatsappDevices().length === 0) {
+      this.api.getWhatsAppDevices().subscribe({
+        next: (res) => this.whatsappDevices.set(res.devices),
+      });
+    }
+
+    this.refreshWhatsAppMessagePreview();
+    this.whatsappModalOpen.set(true);
+  }
+
+  closeWhatsAppModal(): void {
+    if (this.isSendingWhatsApp()) return;
+    this.whatsappModalOpen.set(false);
+    this.whatsappTargetOrder.set(null);
+    this.whatsappStatus.set(null);
+  }
+
+  setWhatsAppRecipientType(type: 'customer' | 'employee'): void {
+    this.whatsappRecipientType.set(type);
+    this.whatsappStatus.set(null);
+    this.refreshWhatsAppMessagePreview();
+  }
+
+  onWhatsAppEmployeeChange(empId: any): void {
+    const id = empId ? Number(empId) : null;
+    this.whatsappSelectedEmployeeId.set(id);
+    this.refreshWhatsAppMessagePreview();
+  }
+
+  refreshWhatsAppMessagePreview(): void {
+    const order = this.whatsappTargetOrder();
+    if (!order) return;
+
+    const type = this.whatsappRecipientType();
+    const dateStr = this.formatDeliveryDate(order.delivery_date);
+    const timeStr = this.formatDeliveryTime(order.delivery_time);
+
+    let itemsText = '';
+    for (const it of order.items) {
+      const promo = it.is_promo ? ' (PROMO)' : '';
+      itemsText += `• ${it.quantity}x ${it.product_name}${promo} - $${Number(it.line_total).toFixed(2)}\n`;
+    }
+
+    if (type === 'employee') {
+      const mapsUrl = this.getMapsUrl(order);
+      const msg = `🛵 *ENTREGA ASIGNADA — TAQUERÍA MARY* 🛵\n\n` +
+        `📋 *Pedido:* #${order.order_number}\n` +
+        `📅 *Fecha:* ${dateStr}\n` +
+        `⏰ *Hora:* ${timeStr}\n\n` +
+        `👤 *Cliente:* ${order.customer_name}\n` +
+        `📞 *Teléfono:* ${order.customer_phone}\n` +
+        `📍 *Dirección:* ${order.delivery_address}` +
+        (order.delivery_references ? `\n📝 *Ref:* ${order.delivery_references}` : '') +
+        `\n🗺️ *Maps:* ${mapsUrl}\n\n` +
+        `🌮 *Productos:*\n${itemsText}\n` +
+        `💵 *COBRO AL ENTREGAR:* $${Number(order.total).toFixed(2)} MXN` +
+        (order.notes ? `\n💬 *Notas:* ${order.notes}` : '');
+      this.whatsappMessageText.set(msg);
+    } else {
+      const msg = `🌮 *TAQUERÍA MARY* 🌮\n` +
+        `¡Hola, *${order.customer_name}*! Confirmamos tu pedido:\n\n` +
+        `📋 *Pedido:* #${order.order_number}\n` +
+        `📅 *Fecha de entrega:* ${dateStr}\n` +
+        `⏰ *Hora estimada:* ${timeStr}\n` +
+        `📍 *Dirección:* ${order.delivery_address}` +
+        (order.delivery_references ? ` (Ref: ${order.delivery_references})` : '') +
+        `\n\n🌮 *Tu orden:*\n${itemsText}\n` +
+        `💰 *Total a pagar:* $${Number(order.total).toFixed(2)} MXN` +
+        (order.promo_savings > 0 ? ` (Ahorro promos: $${Number(order.promo_savings).toFixed(2)})` : '') +
+        (order.notes ? `\n💬 *Notas:* ${order.notes}` : '') +
+        `\n\n¡Muchas gracias por tu preferencia! 🙌`;
+      this.whatsappMessageText.set(msg);
+    }
+  }
+
+  sendOrderWhatsApp(): void {
+    const order = this.whatsappTargetOrder();
+    if (!order) return;
+
+    const type = this.whatsappRecipientType();
+    const empId = this.whatsappSelectedEmployeeId();
+
+    if (type === 'employee' && !empId) {
+      this.whatsappStatus.set({
+        type: 'error',
+        message: 'Por favor selecciona al empleado o repartidor destinatario.',
+      });
+      return;
+    }
+
+    this.isSendingWhatsApp.set(true);
+    this.whatsappStatus.set(null);
+
+    this.api.sendOrderWhatsApp(order.id, {
+      recipient_type: type,
+      employee_id: empId ?? undefined,
+      message: this.whatsappMessageText().trim(),
+    }).subscribe({
+      next: (res) => {
+        this.isSendingWhatsApp.set(false);
+        this.whatsappStatus.set({
+          type: 'success',
+          message: res.message || '¡Mensaje de WhatsApp entregado exitosamente!',
+        });
+        this.toast.success('¡WhatsApp enviado!');
+      },
+      error: (err) => {
+        this.isSendingWhatsApp.set(false);
+        const errMsg = err?.error?.error || err?.error?.message || 'Error al enviar por WhatsApp. Verifica que la línea esté conectada.';
+        this.whatsappStatus.set({
+          type: 'error',
+          message: errMsg,
+        });
+        this.toast.error(errMsg);
+      },
+    });
+  }
+
+  openDirectWhatsAppWeb(order: Order, type: 'customer' | 'employee'): void {
+    let phone = order.customer_phone;
+    if (type === 'employee') {
+      const emp = this.whatsappEmployees().find((e) => e.id === this.whatsappSelectedEmployeeId());
+      if (emp) phone = emp.phone;
+    }
+    const clean = phone.replace(/\D/g, '');
+    const intl = clean.length === 10 ? `521${clean}` : clean;
+    const text = encodeURIComponent(this.whatsappMessageText());
+    window.open(`https://wa.me/${intl}?text=${text}`, '_blank');
   }
 }

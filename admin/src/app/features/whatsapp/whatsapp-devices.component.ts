@@ -31,6 +31,14 @@ export class WhatsappDevicesComponent implements OnInit, OnDestroy {
   readonly settingsModalOpen = signal(false);
   readonly customApiUrl = signal('');
 
+  // Test message modal state
+  readonly testModalOpen = signal(false);
+  readonly testTargetDevice = signal<WhatsAppDevice | null>(null);
+  readonly testPhone = signal('');
+  readonly testMessageText = signal('¡Hola! Este es un mensaje de prueba enviado desde Taquería Mary 🌮');
+  readonly isSendingTest = signal(false);
+  readonly testStatusAlert = signal<{ type: 'success' | 'error'; message: string } | null>(null);
+
   readonly deletingDevice = signal<WhatsAppDevice | null>(null);
   readonly isActionBusy = signal(false);
 
@@ -219,6 +227,67 @@ export class WhatsappDevicesComponent implements OnInit, OnDestroy {
   openSettingsModal(): void {
     this.customApiUrl.set(this.apiUrl());
     this.settingsModalOpen.set(true);
+  }
+
+  // --- Test Message Modal Handlers ---
+  openTestModal(device: WhatsAppDevice): void {
+    this.testTargetDevice.set(device);
+    this.testStatusAlert.set(null);
+    this.testModalOpen.set(true);
+  }
+
+  closeTestModal(): void {
+    if (this.isSendingTest()) return;
+    this.testModalOpen.set(false);
+    this.testTargetDevice.set(null);
+    this.testStatusAlert.set(null);
+  }
+
+  sendTestMessage(): void {
+    const dev = this.testTargetDevice();
+    if (!dev) return;
+
+    const phone = this.testPhone().trim();
+    const cleanPhone = phone.replace(/\D/g, '');
+    if (cleanPhone.length < 8) {
+      this.testStatusAlert.set({
+        type: 'error',
+        message: 'Por favor ingresa un número de teléfono válido (mínimo 8-10 dígitos).',
+      });
+      return;
+    }
+
+    const message = this.testMessageText().trim();
+    if (!message) {
+      this.testStatusAlert.set({
+        type: 'error',
+        message: 'El texto del mensaje no puede estar vacío.',
+      });
+      return;
+    }
+
+    this.isSendingTest.set(true);
+    this.testStatusAlert.set(null);
+
+    this.api.sendWhatsAppTestMessage(dev.id, { numero: phone, mensaje: message }).subscribe({
+      next: (res) => {
+        this.isSendingTest.set(false);
+        this.testStatusAlert.set({
+          type: 'success',
+          message: res.message || '¡Mensaje entregado exitosamente a WhatsApp!',
+        });
+        this.toast.success('¡Mensaje enviado con éxito!');
+      },
+      error: (err) => {
+        this.isSendingTest.set(false);
+        const errMsg = err?.error?.error || err?.error?.message || 'Error al enviar el mensaje. Verifica que el dispositivo esté conectado.';
+        this.testStatusAlert.set({
+          type: 'error',
+          message: errMsg,
+        });
+        this.toast.error(errMsg);
+      },
+    });
   }
 
   saveSettings(): void {
