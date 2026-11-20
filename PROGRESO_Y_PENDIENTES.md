@@ -72,3 +72,16 @@
 ### F. Estado de Pruebas y Compilación
 - **Laravel (`php artisan test`):** `10 passed (119 assertions)` en `api/tests/Feature/TacosDoradosApiTest.php`.
 - **Angular (`npm run build`):** compila limpio en 3.9s con `0` errores y `0` advertencias.
+- **Despliegues Git:**
+  - Microservicio Railway `whatsapp-api`: actualizado y verificado en producción (`https://whatsapp-api-production-80b7.up.railway.app/health`).
+  - Proyecto `pedidos`: subido a GitHub `origin main` (disparando GitHub Actions para Laravel y Angular hacia Hostinger).
+
+---
+
+## 3. Próximos pasos (Fase 2)
+1. **Catálogo sencillo de empleados:**
+   - Nombre, celular/WhatsApp, rol (repartidor/cocina/caja) y notas.
+2. **Envío de mensajes WhatsApp:**
+   - Envío de comprobante/ticket de pedido y confirmación a clientes.
+   - Notificación de asignación de entrega a empleados repartidores con dirección y enlace a Google Maps.
+
