@@ -234,7 +234,9 @@
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  padding: 1rem;
+  padding: 1.25rem 1rem;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .modal-panel {
@@ -243,10 +245,29 @@
   box-shadow: var(--shadow-lg);
   width: 100%;
   max-width: 480px;
+  max-height: calc(100vh - 2.5rem);
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
+  margin: auto;
 
   &.qr-modal {
     max-width: 520px;
+  }
+
+  .modal-head {
+    flex-shrink: 0;
+  }
+
+  .modal-body {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  .modal-actions {
+    flex-shrink: 0;
   }
 }
 

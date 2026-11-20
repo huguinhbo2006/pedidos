@@ -5,7 +5,7 @@ import { RouterLink } from '@angular/router';
 import { Subject, Subscription, debounceTime, distinctUntilChanged } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
-import { Employee, Order, TodayOrdersResponse, WhatsAppDevice } from '../../core/models/api.models';
+import { Employee, Order, OrderItem, TodayOrdersResponse, WhatsAppDevice } from '../../core/models/api.models';
 
 @Component({
   selector: 'app-today-orders',
@@ -303,6 +303,31 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
     return dateOnly;
   }
 
+  formatPackageDetailsLines(item: OrderItem): string {
+    if (!item.package_details) return '';
+    let details: any[] = [];
+    if (Array.isArray(item.package_details)) {
+      details = item.package_details;
+    } else if (typeof item.package_details === 'string') {
+      try {
+        details = JSON.parse(item.package_details);
+      } catch {
+        details = [];
+      }
+    }
+    if (!details || details.length === 0) return '';
+
+    let res = '';
+    for (const det of details) {
+      const qty = det.quantity ?? 1;
+      const label = det.label || det.name || 'Opción';
+      const extraPrice = Number(det.extra_price ?? 0);
+      const extraStr = extraPrice > 0 ? ` (+ $${extraPrice.toFixed(2)} c/u)` : '';
+      res += `   - ${qty}x ${label}${extraStr}\n`;
+    }
+    return res;
+  }
+
   refreshWhatsAppMessagePreview(): void {
     const order = this.whatsappTargetOrder();
     if (!order) return;
@@ -319,6 +344,7 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
       for (const it of order.items) {
         const promo = it.is_promo ? ' (PROMO)' : '';
         itemsOnly += `• ${it.quantity}x ${it.product_name}${promo}\n`;
+        itemsOnly += this.formatPackageDetailsLines(it);
       }
       if (order.notes) {
         itemsOnly += `📝 Notas: ${order.notes}\n`;
@@ -343,6 +369,7 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
       for (const it of order.items) {
         const promo = it.is_promo ? ' (PROMO)' : '';
         itemsText += `• ${it.quantity}x ${it.product_name}${promo} - $${Number(it.line_total).toFixed(2)}\n`;
+        itemsText += this.formatPackageDetailsLines(it);
       }
 
       const msg = `🌮 *TAQUERÍA MARY* 🌮\n` +

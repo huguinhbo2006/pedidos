@@ -294,7 +294,9 @@
   align-items: center;
   justify-content: center;
   z-index: 1050;
-  padding: 1rem;
+  padding: 1.25rem 1rem;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .modal-panel {
@@ -303,13 +305,15 @@
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
   width: 100%;
   max-width: 500px;
-  max-height: 90vh;
+  max-height: calc(100vh - 2.5rem);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  margin: auto;
   animation: modalPop 0.18s ease-out;
 
   .modal-head {
+    flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -360,12 +364,16 @@
   }
 
   .modal-body {
+    flex: 1 1 auto;
     padding: 1.25rem 1.35rem;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
     font-size: 0.92rem;
   }
 
   .modal-actions {
+    flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: flex-end;

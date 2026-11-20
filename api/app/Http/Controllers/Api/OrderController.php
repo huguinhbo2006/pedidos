@@ -914,10 +914,31 @@ class OrderController extends Controller
     {
         $dateStr = $order->delivery_date ? Carbon::parse($order->delivery_date)->format('d/m/Y') : Carbon::today()->format('d/m/Y');
         $timeStr = $order->delivery_time ?: 'Horario habitual';
+
+        $formatPackageDetails = function ($details) {
+            $sub = '';
+            if (!empty($details)) {
+                if (is_string($details)) {
+                    $details = json_decode($details, true) ?: [];
+                }
+                if (is_array($details)) {
+                    foreach ($details as $detail) {
+                        $qty = $detail['quantity'] ?? 1;
+                        $label = $detail['label'] ?? ($detail['name'] ?? 'Opción');
+                        $extraPrice = (float) ($detail['extra_price'] ?? 0);
+                        $extraStr = $extraPrice > 0 ? " (+ $" . number_format($extraPrice, 2) . " c/u)" : "";
+                        $sub .= "   - {$qty}x {$label}{$extraStr}\n";
+                    }
+                }
+            }
+            return $sub;
+        };
+
         $itemsList = '';
         foreach ($order->items as $item) {
             $promoTag = $item->is_promo ? ' (PROMO)' : '';
             $itemsList .= "• {$item->quantity}x {$item->product_name}{$promoTag} - $" . number_format($item->line_total, 2) . "\n";
+            $itemsList .= $formatPackageDetails($item->package_details);
         }
 
         if ($type === 'employee') {
@@ -937,6 +958,7 @@ class OrderController extends Controller
             foreach ($order->items as $item) {
                 $promoTag = $item->is_promo ? ' (PROMO)' : '';
                 $itemsOnly .= "• {$item->quantity}x {$item->product_name}{$promoTag}\n";
+                $itemsOnly .= $formatPackageDetails($item->package_details);
             }
             if ($order->notes) {
                 $itemsOnly .= "📝 Notas: {$order->notes}\n";

@@ -739,6 +739,51 @@ class TacosDoradosApiTest extends TestCase
         $this->assertTrue($waPdfResp->json('success'));
         $this->assertTrue($waPdfResp->json('sent_pdf'));
 
+        // 7.6 Enviar WhatsApp con desglose de paquetes
+        $pkg = \App\Models\Package::first();
+        $group = $pkg ? $pkg->groups()->first() : null;
+        $opt = $group ? $group->options()->first() : null;
+        if ($pkg && $group && $opt) {
+            $pkgOrder = $this->withToken($token)
+                ->postJson('/api/orders', [
+                    'customer_phone' => '3399887766',
+                    'customer_name' => 'Carlos Paquete',
+                    'delivery_address' => 'Av Hidalgo 456',
+                    'items' => [
+                        [
+                            'item_type' => 'package',
+                            'package_id' => $pkg->id,
+                            'product_name' => $pkg->name,
+                            'quantity' => 1,
+                            'is_promo' => false,
+                            'unit_price' => $pkg->base_price,
+                            'line_total' => $pkg->base_price,
+                            'package_details' => [
+                                [
+                                    'group_id' => $group->id,
+                                    'option_id' => $opt->id,
+                                    'group' => $group->name,
+                                    'label' => $opt->label,
+                                    'quantity' => $group->max_quantity > 0 ? $group->max_quantity : 1,
+                                    'extra_price' => 0,
+                                ],
+                            ],
+                        ],
+                    ],
+                ])
+                ->assertStatus(201)
+                ->json();
+
+            $pkgWaResp = $this->withToken($token)
+                ->postJson("/api/orders/{$pkgOrder['id']}/whatsapp", [
+                    'recipient_type' => 'customer',
+                ])
+                ->assertOk();
+
+            $this->assertStringContainsString("• 1x {$pkg->name}", $pkgWaResp->json('sent_text'));
+            $this->assertStringContainsString($opt->label, $pkgWaResp->json('sent_text'));
+        }
+
         // 8. Eliminar empleado
         $this->withToken($token)
             ->deleteJson("/api/employees/{$employeeId}")
