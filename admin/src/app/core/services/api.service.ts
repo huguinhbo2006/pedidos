@@ -10,6 +10,7 @@ import {
   MapsConfig,
   MealPackage,
   Order,
+  OrderWhatsAppTemplate,
   PackageSelectionItem,
   Product,
   Promotion,
@@ -193,11 +194,16 @@ export class ApiService {
     return this.http.delete<{ message: string }>(`${this.apiUrl}/orders/${id}`);
   }
 
-  markOrderDelivered(orderId: number): Observable<{ message: string; order: Order }> {
-    return this.http.patch<{ message: string; order: Order }>(
-      `${this.apiUrl}/orders/${orderId}/deliver`,
-      {}
-    );
+  markOrderDelivered(
+    orderId: number,
+    options?: { send_thank_you?: boolean; device_id?: number }
+  ): Observable<{ message: string; order: Order; whatsapp_sent?: boolean; whatsapp_error?: string | null }> {
+    return this.http.patch<{
+      message: string;
+      order: Order;
+      whatsapp_sent?: boolean;
+      whatsapp_error?: string | null;
+    }>(`${this.apiUrl}/orders/${orderId}/deliver`, options ?? {});
   }
 
   downloadOrderPdf(orderId: number): Observable<Blob> {
@@ -303,6 +309,7 @@ export class ApiService {
     orderId: number,
     payload: {
       recipient_type: 'customer' | 'employee' | 'custom';
+      template?: OrderWhatsAppTemplate;
       phone?: string;
       employee_id?: number;
       device_id?: number;
@@ -316,6 +323,8 @@ export class ApiService {
     recipient?: string;
     sent_text?: string;
     sent_pdf?: boolean;
+    template?: OrderWhatsAppTemplate;
+    order?: Order;
   }> {
     return this.http.post<{
       success: boolean;
@@ -323,6 +332,9 @@ export class ApiService {
       device?: string;
       recipient?: string;
       sent_text?: string;
+      sent_pdf?: boolean;
+      template?: OrderWhatsAppTemplate;
+      order?: Order;
     }>(`${this.apiUrl}/orders/${orderId}/whatsapp`, payload);
   }
 

@@ -606,6 +606,55 @@
   }
 }
 
+.btn-onway-btn {
+  background: #fffbeb;
+  color: #b45309;
+  border: 1px solid #fcd34d;
+  font-weight: 700;
+
+  &:hover:not(:disabled) {
+    background: #fef3c7;
+    border-color: #f59e0b;
+    color: #92400e;
+  }
+
+  &.sent {
+    background: var(--bg-green-soft);
+    border-color: #86efac;
+    color: var(--brand-green);
+  }
+}
+
+.wa-template-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.1rem;
+
+  .tpl-pill {
+    border: 1.5px solid var(--border-strong);
+    background: var(--bg-canvas);
+    color: var(--text-secondary);
+    border-radius: 999px;
+    padding: 0.3rem 0.7rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+
+    &:hover:not(:disabled) {
+      border-color: var(--brand-primary);
+      color: var(--brand-primary);
+    }
+
+    &.active {
+      background: var(--bg-accent-soft);
+      border-color: var(--brand-primary);
+      color: var(--brand-primary);
+    }
+  }
+}
+
 .wa-modal-panel {
   max-width: 580px;
   max-height: calc(100vh - 2.5rem);

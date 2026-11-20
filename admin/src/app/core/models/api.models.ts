@@ -181,10 +181,14 @@ export interface Order {
   assigned_employee?: Employee | null;
   is_delivered: boolean;
   delivered_at: string | null;
+  on_the_way_sent_at?: string | null;
+  thank_you_sent_at?: string | null;
   created_at: string;
   items: OrderItem[];
   customer?: Customer;
 }
+
+export type OrderWhatsAppTemplate = 'confirmation' | 'on_the_way' | 'thank_you';
 
 export interface TodayOrdersResponse {
   date: string;

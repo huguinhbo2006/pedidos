@@ -5,7 +5,14 @@ import { RouterLink } from '@angular/router';
 import { Subject, Subscription, debounceTime, distinctUntilChanged } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
-import { Employee, Order, OrderItem, TodayOrdersResponse, WhatsAppDevice } from '../../core/models/api.models';
+import {
+  Employee,
+  Order,
+  OrderItem,
+  OrderWhatsAppTemplate,
+  TodayOrdersResponse,
+  WhatsAppDevice,
+} from '../../core/models/api.models';
 
 @Component({
   selector: 'app-today-orders',
@@ -35,6 +42,8 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
   readonly todayDate = signal<string>('');
   readonly confirmingOrder = signal<Order | null>(null);
   readonly deliveringId = signal<number | null>(null);
+  readonly sendThankYouOnDeliver = signal<boolean>(true);
+  readonly sendingOnTheWayId = signal<number | null>(null);
   readonly deletingOrder = signal<Order | null>(null);
   readonly isDeleting = signal(false);
   readonly downloadingPdfId = signal<number | null>(null);
@@ -43,6 +52,7 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
   readonly whatsappModalOpen = signal(false);
   readonly whatsappTargetOrder = signal<Order | null>(null);
   readonly whatsappRecipientType = signal<'customer' | 'employee'>('customer');
+  readonly whatsappCustomerTemplate = signal<OrderWhatsAppTemplate>('confirmation');
   readonly whatsappEmployees = signal<Employee[]>([]);
   readonly whatsappSelectedEmployeeId = signal<number | null>(null);
   readonly whatsappDevices = signal<WhatsAppDevice[]>([]);
@@ -50,6 +60,10 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
   readonly isSendingWhatsApp = signal(false);
   readonly whatsappSendPdf = signal<boolean>(false);
   readonly whatsappStatus = signal<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  readonly hasConnectedWhatsApp = computed(() =>
+    this.whatsappDevices().some((d) => d.status === 'CONNECTED')
+  );
 
   // Quick Edit Customer Modal State
   readonly editingCustomerOrder = signal<Order | null>(null);
@@ -74,6 +88,9 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.loadOrders();
+    this.api.getWhatsAppDevices().subscribe({
+      next: (res) => this.whatsappDevices.set(res.devices),
+    });
     this.sub = this.search$
       .pipe(debounceTime(260), distinctUntilChanged())
       .subscribe((term) => this.loadOrders(term));
@@ -107,6 +124,7 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
 
   openConfirmDeliver(order: Order): void {
     this.confirmingOrder.set(order);
+    this.sendThankYouOnDeliver.set(this.hasConnectedWhatsApp() && !order.thank_you_sent_at);
   }
 
   cancelConfirmDeliver(): void {
@@ -118,8 +136,9 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
     const order = this.confirmingOrder();
     if (!order || this.deliveringId() !== null) return;
 
+    const sendThankYou = this.sendThankYouOnDeliver();
     this.deliveringId.set(order.id);
-    this.api.markOrderDelivered(order.id).subscribe({
+    this.api.markOrderDelivered(order.id, { send_thank_you: sendThankYou }).subscribe({
       next: (res) => {
         this.deliveringId.set(null);
         this.confirmingOrder.set(null);
@@ -132,13 +151,61 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
           pending_amount: Math.max(0, Number((s.pending_amount - order.total).toFixed(2))),
           delivered_amount: Number((s.delivered_amount + order.total).toFixed(2)),
         }));
-        this.toast.success(res.message);
+
+        if (sendThankYou) {
+          if (res.whatsapp_sent) {
+            this.toast.success(`Pedido ${order.order_number} entregado y "¡Gracias por tu compra!" enviado por WhatsApp.`);
+          } else {
+            this.toast.show(
+              `Pedido entregado, pero no se pudo enviar WhatsApp: ${res.whatsapp_error || 'verifica la línea'}`,
+              'info',
+              5500
+            );
+          }
+        } else {
+          this.toast.success(res.message);
+        }
       },
       error: () => {
         this.deliveringId.set(null);
         this.toast.error('Ocurrió un error al confirmar la entrega.');
       },
     });
+  }
+
+  sendQuickOnTheWay(order: Order): void {
+    if (this.sendingOnTheWayId() !== null) return;
+
+    this.sendingOnTheWayId.set(order.id);
+    this.api
+      .sendOrderWhatsApp(order.id, {
+        recipient_type: 'customer',
+        template: 'on_the_way',
+      })
+      .subscribe({
+        next: (res) => {
+          this.sendingOnTheWayId.set(null);
+          if (res.order) {
+            this.replaceOrderInLists(res.order);
+          }
+          this.toast.success(`🛵 Aviso "Ya vamos para allá" enviado a ${order.customer_name}.`);
+        },
+        error: (err) => {
+          this.sendingOnTheWayId.set(null);
+          const msg =
+            err?.error?.error ||
+            err?.error?.message ||
+            'No se pudo enviar el aviso "En camino". Verifica la línea de WhatsApp.';
+          this.toast.error(msg);
+        },
+      });
+  }
+
+  private replaceOrderInLists(updated: Order): void {
+    this.orders.update((list) => list.map((o) => (o.id === updated.id ? { ...o, ...updated } : o)));
+    this.upcomingOrders.update((list) =>
+      list.map((o) => (o.id === updated.id ? { ...o, ...updated } : o))
+    );
   }
 
   openConfirmDelete(order: Order): void {
@@ -240,6 +307,7 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
     this.whatsappSendPdf.set(withPdf);
     this.whatsappTargetOrder.set(order);
     this.whatsappRecipientType.set(defaultType);
+    this.whatsappCustomerTemplate.set('confirmation');
     this.whatsappStatus.set(null);
     this.whatsappSelectedEmployeeId.set(order.assigned_employee_id ?? null);
 
@@ -274,6 +342,12 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
 
   setWhatsAppRecipientType(type: 'customer' | 'employee'): void {
     this.whatsappRecipientType.set(type);
+    this.whatsappStatus.set(null);
+    this.refreshWhatsAppMessagePreview();
+  }
+
+  setWhatsAppCustomerTemplate(tpl: OrderWhatsAppTemplate): void {
+    this.whatsappCustomerTemplate.set(tpl);
     this.whatsappStatus.set(null);
     this.refreshWhatsAppMessagePreview();
   }
@@ -377,6 +451,29 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
 
       this.whatsappMessageText.set(msg);
     } else {
+      const tpl = this.whatsappCustomerTemplate();
+      if (tpl === 'on_the_way') {
+        const refTxt = order.delivery_references ? ` (Ref: ${order.delivery_references})` : '';
+        const msg =
+          `🛵 *¡YA VAMOS PARA ALLÁ!* 🌮\n\n` +
+          `¡Hola, *${order.customer_name}*! Tu pedido *#${order.order_number}* ya salió y va en camino hacia tu domicilio.\n\n` +
+          `📍 *Dirección:* ${order.delivery_address}${refTxt}\n` +
+          `💰 *Total a cobrar:* $${Number(order.total).toFixed(2)} MXN\n\n` +
+          `¡Muchas gracias por tu espera, en un momento llegamos! 🙌`;
+        this.whatsappMessageText.set(msg);
+        return;
+      }
+
+      if (tpl === 'thank_you') {
+        const msg =
+          `🌮 *¡MUCHAS GRACIAS POR TU COMPRA!* 🙌\n\n` +
+          `¡Hola, *${order.customer_name}*! Esperamos que disfrutes mucho tu pedido de *Taquería Mary*.\n\n` +
+          `📋 *Pedido:* #${order.order_number}\n\n` +
+          `¡Gracias por tu preferencia, estamos a tus órdenes para tu próximo antojo! 😊`;
+        this.whatsappMessageText.set(msg);
+        return;
+      }
+
       const dateStr = this.formatDeliveryDate(order.delivery_date);
       let itemsText = '';
       for (const it of order.items) {
@@ -421,12 +518,16 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
 
     this.api.sendOrderWhatsApp(order.id, {
       recipient_type: type,
+      template: type === 'customer' ? this.whatsappCustomerTemplate() : undefined,
       employee_id: empId ?? undefined,
       message: this.whatsappMessageText().trim(),
       send_pdf: this.whatsappSendPdf(),
     }).subscribe({
       next: (res) => {
         this.isSendingWhatsApp.set(false);
+        if (res.order) {
+          this.replaceOrderInLists(res.order);
+        }
         this.whatsappStatus.set({
           type: 'success',
           message: res.message || '¡Mensaje de WhatsApp entregado exitosamente!',

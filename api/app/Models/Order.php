@@ -34,6 +34,8 @@ class Order extends Model
         'assigned_employee_id',
         'is_delivered',
         'delivered_at',
+        'on_the_way_sent_at',
+        'thank_you_sent_at',
         'created_by',
     ];
 
@@ -52,6 +54,8 @@ class Order extends Model
             'total' => 'float',
             'is_delivered' => 'boolean',
             'delivered_at' => 'datetime',
+            'on_the_way_sent_at' => 'datetime',
+            'thank_you_sent_at' => 'datetime',
         ];
     }
 

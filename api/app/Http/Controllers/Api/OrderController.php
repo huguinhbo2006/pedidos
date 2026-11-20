@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\AppSetting;
 use App\Models\Customer;
 use App\Models\CustomerAddress;
 use App\Models\Employee;
@@ -11,14 +10,13 @@ use App\Models\Order;
 use App\Models\Package;
 use App\Models\Product;
 use App\Models\Promotion;
-use App\Models\WhatsAppDevice;
+use App\Services\WhatsAppService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
 
 class OrderController extends Controller
@@ -206,8 +204,13 @@ class OrderController extends Controller
         ]);
     }
 
-    public function deliver(Order $order): JsonResponse
+    public function deliver(Request $request, Order $order, WhatsAppService $whatsApp): JsonResponse
     {
+        $request->validate([
+            'send_thank_you' => ['nullable', 'boolean'],
+            'device_id' => ['nullable', 'integer', 'exists:whatsapp_devices,id'],
+        ]);
+
         if (! $order->is_delivered) {
             $order->update([
                 'is_delivered' => true,
@@ -215,9 +218,35 @@ class OrderController extends Controller
             ]);
         }
 
+        $whatsappSent = false;
+        $whatsappError = null;
+
+        if ($request->boolean('send_thank_you')) {
+            $device = $whatsApp->resolveDevice(
+                $request->filled('device_id') ? (int) $request->input('device_id') : null
+            );
+
+            if (! $device) {
+                $whatsappError = 'No hay ningún dispositivo de WhatsApp configurado.';
+            } else {
+                $order->loadMissing('items');
+                $msg = $this->buildOrderWhatsAppTemplate($order, 'customer', null, 'thank_you');
+                $sendRes = $whatsApp->sendTextMessage($device, $order->customer_phone, $msg);
+
+                if ($sendRes['success']) {
+                    $whatsappSent = true;
+                    $order->update(['thank_you_sent_at' => now()]);
+                } else {
+                    $whatsappError = $sendRes['error'];
+                }
+            }
+        }
+
         return response()->json([
             'message' => "Pedido {$order->order_number} marcado como entregado.",
-            'order' => $order->load('items'),
+            'order' => $order->fresh()->load(['items', 'assignedEmployee']),
+            'whatsapp_sent' => $whatsappSent,
+            'whatsapp_error' => $whatsappError,
         ]);
     }
 
@@ -763,10 +792,11 @@ class OrderController extends Controller
         return [$normalized, round($extraSum, 2)];
     }
 
-    public function sendWhatsApp(Request $request, Order $order): JsonResponse
+    public function sendWhatsApp(Request $request, Order $order, WhatsAppService $whatsApp): JsonResponse
     {
         $request->validate([
             'recipient_type' => ['required', 'in:customer,employee,custom'],
+            'template' => ['nullable', 'in:confirmation,on_the_way,thank_you'],
             'phone' => ['nullable', 'string', 'min:8', 'max:25'],
             'employee_id' => ['nullable', 'integer', 'exists:employees,id'],
             'device_id' => ['nullable', 'integer', 'exists:whatsapp_devices,id'],
@@ -777,6 +807,7 @@ class OrderController extends Controller
         $order->load(['items', 'assignedEmployee']);
 
         $recipientType = $request->input('recipient_type');
+        $template = $request->input('template', 'confirmation');
         $targetPhone = $request->input('phone');
         $employee = null;
 
@@ -804,31 +835,17 @@ class OrderController extends Controller
             ], 422);
         }
 
-        $cleanNumber = preg_replace('/\D/', '', $targetPhone);
-        if (strlen($cleanNumber) < 8) {
+        $cleanNumber = $whatsApp->formatMexicoNumber($targetPhone);
+        if (! $cleanNumber) {
             return response()->json([
                 'success' => false,
                 'error' => 'El número de teléfono debe tener al menos 8 dígitos.',
             ], 422);
         }
 
-        if (strlen($cleanNumber) === 10) {
-            $cleanNumber = '521' . $cleanNumber;
-        } elseif (strlen($cleanNumber) === 12 && str_starts_with($cleanNumber, '52') && !str_starts_with($cleanNumber, '521')) {
-            $cleanNumber = '521' . substr($cleanNumber, 2);
-        }
-
-        $deviceId = $request->input('device_id');
-        $device = null;
-        if ($deviceId) {
-            $device = WhatsAppDevice::find($deviceId);
-        }
-        if (! $device) {
-            $device = WhatsAppDevice::where('status', 'CONNECTED')->where('is_default', true)->first()
-                ?: WhatsAppDevice::where('status', 'CONNECTED')->first()
-                ?: WhatsAppDevice::where('is_default', true)->first()
-                ?: WhatsAppDevice::first();
-        }
+        $device = $whatsApp->resolveDevice(
+            $request->filled('device_id') ? (int) $request->input('device_id') : null
+        );
 
         if (! $device) {
             return response()->json([
@@ -839,57 +856,54 @@ class OrderController extends Controller
 
         $messageText = trim((string) $request->input('message'));
         if (empty($messageText)) {
-            $messageText = $this->buildOrderWhatsAppTemplate($order, $recipientType, $employee);
+            $messageText = $this->buildOrderWhatsAppTemplate($order, $recipientType, $employee, $template);
         }
 
-        $savedUrl = AppSetting::getValue('whatsapp_api_url');
-        $apiUrl = rtrim($savedUrl ?: env('WHATSAPP_API_URL', 'https://whatsapp-api-production-80b7.up.railway.app'), '/');
         $sendPdf = $request->boolean('send_pdf');
 
-        try {
-            if ($sendPdf) {
-                $pdfBase64 = $this->generateOrderPdfBase64($order);
-                $fileName = "ticket-{$order->order_number}.pdf";
-
-                $response = Http::timeout(25)->post("{$apiUrl}/sessions/{$device->session_id}/send-media", [
-                    'numero' => $cleanNumber,
-                    'mediaBase64' => $pdfBase64,
-                    'fileName' => $fileName,
-                    'type' => 'document',
-                    'mimetype' => 'application/pdf',
-                    'caption' => $messageText,
-                ]);
-            } else {
-                $response = Http::timeout(15)->post("{$apiUrl}/sessions/{$device->session_id}/send-message", [
-                    'numero' => $cleanNumber,
-                    'mensaje' => $messageText,
-                ]);
-            }
-
-            if ($response->successful()) {
-                return response()->json([
-                    'success' => true,
-                    'message' => $sendPdf
-                        ? '¡Ticket PDF de WhatsApp enviado exitosamente!'
-                        : '¡Mensaje de WhatsApp enviado exitosamente!',
-                    'device' => $device->name,
-                    'recipient' => $cleanNumber,
-                    'sent_text' => $messageText,
-                    'sent_pdf' => $sendPdf,
-                ]);
-            }
-
-            $errMsg = $response->json('error') ?: 'El servicio de WhatsApp no pudo entregar el mensaje. Verifica que la línea esté conectada.';
-            return response()->json([
-                'success' => false,
-                'error' => $errMsg,
-            ], 422);
-        } catch (\Throwable $e) {
-            return response()->json([
-                'success' => false,
-                'error' => 'Error de conexión con el servicio de WhatsApp en Railway: ' . $e->getMessage(),
-            ], 500);
+        if ($sendPdf) {
+            $pdfBase64 = $this->generateOrderPdfBase64($order);
+            $fileName = "ticket-{$order->order_number}.pdf";
+            $res = $whatsApp->sendMediaMessage(
+                $device,
+                $cleanNumber,
+                $messageText,
+                $pdfBase64,
+                $fileName,
+                'application/pdf',
+                'document'
+            );
+        } else {
+            $res = $whatsApp->sendTextMessage($device, $cleanNumber, $messageText);
         }
+
+        if ($res['success']) {
+            if ($recipientType === 'customer') {
+                if ($template === 'on_the_way') {
+                    $order->update(['on_the_way_sent_at' => now()]);
+                } elseif ($template === 'thank_you') {
+                    $order->update(['thank_you_sent_at' => now()]);
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => $sendPdf
+                    ? '¡Ticket PDF de WhatsApp enviado exitosamente!'
+                    : '¡Mensaje de WhatsApp enviado exitosamente!',
+                'device' => $device->name,
+                'recipient' => $res['data']['to'] ?? $cleanNumber,
+                'sent_text' => $messageText,
+                'sent_pdf' => $sendPdf,
+                'template' => $template,
+                'order' => $order->fresh()->load(['items', 'assignedEmployee']),
+            ]);
+        }
+
+        return response()->json([
+            'success' => false,
+            'error' => $res['error'] ?: 'El servicio de WhatsApp no pudo entregar el mensaje.',
+        ], $res['status'] >= 400 && $res['status'] < 500 ? $res['status'] : 422);
     }
 
     private function generateOrderPdfBase64(Order $order): string
@@ -910,8 +924,12 @@ class OrderController extends Controller
         return base64_encode($pdf->output());
     }
 
-    private function buildOrderWhatsAppTemplate(Order $order, string $type, ?Employee $employee = null): string
-    {
+    private function buildOrderWhatsAppTemplate(
+        Order $order,
+        string $type,
+        ?Employee $employee = null,
+        string $template = 'confirmation'
+    ): string {
         $dateStr = $order->delivery_date ? Carbon::parse($order->delivery_date)->format('d/m/Y') : Carbon::today()->format('d/m/Y');
         $timeStr = $order->delivery_time ?: 'Horario habitual';
 
@@ -975,6 +993,22 @@ class OrderController extends Controller
                 . "$" . number_format($order->total, 2) . " MXN\n\n"
                 . "🌮 *PEDIDO (#{$order->order_number}):*\n"
                 . trim($itemsOnly);
+        }
+
+        if ($template === 'on_the_way') {
+            return "🛵 *¡YA VAMOS PARA ALLÁ!* 🌮\n\n"
+                . "¡Hola, *{$order->customer_name}*! Tu pedido *#{$order->order_number}* ya salió y va en camino hacia tu domicilio.\n\n"
+                . "📍 *Dirección:* {$order->delivery_address}"
+                . ($order->delivery_references ? " (Ref: {$order->delivery_references})" : '') . "\n"
+                . "💰 *Total a cobrar:* $" . number_format($order->total, 2) . " MXN\n\n"
+                . "¡Muchas gracias por tu espera, en un momento llegamos! 🙌";
+        }
+
+        if ($template === 'thank_you') {
+            return "🌮 *¡MUCHAS GRACIAS POR TU COMPRA!* 🙌\n\n"
+                . "¡Hola, *{$order->customer_name}*! Esperamos que disfrutes mucho tu pedido de *Taquería Mary*.\n\n"
+                . "📋 *Pedido:* #{$order->order_number}\n\n"
+                . "¡Gracias por tu preferencia, estamos a tus órdenes para tu próximo antojo! 😊";
         }
 
         return "🌮 *TAQUERÍA MARY* 🌮\n"

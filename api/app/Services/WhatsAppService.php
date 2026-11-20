@@ -96,4 +96,64 @@ class WhatsAppService
             ];
         }
     }
+
+    /**
+     * @return array{success: bool, status: int, error: ?string, data: mixed}
+     */
+    public function sendMediaMessage(
+        WhatsAppDevice $device,
+        string $rawPhone,
+        string $caption,
+        string $mediaBase64,
+        string $fileName,
+        string $mimetype = 'application/pdf',
+        string $type = 'document'
+    ): array {
+        $formattedNumber = $this->formatMexicoNumber($rawPhone);
+        if (! $formattedNumber) {
+            return [
+                'success' => false,
+                'status' => 422,
+                'error' => 'El número de teléfono debe tener al menos 8 dígitos.',
+                'data' => null,
+            ];
+        }
+
+        $apiUrl = $this->getApiUrl();
+
+        try {
+            $response = Http::timeout(25)->post("{$apiUrl}/sessions/{$device->session_id}/send-media", [
+                'numero' => $formattedNumber,
+                'mediaBase64' => $mediaBase64,
+                'fileName' => $fileName,
+                'type' => $type,
+                'mimetype' => $mimetype,
+                'caption' => $caption,
+            ]);
+
+            if ($response->successful()) {
+                return [
+                    'success' => true,
+                    'status' => $response->status(),
+                    'error' => null,
+                    'data' => $response->json(),
+                ];
+            }
+
+            return [
+                'success' => false,
+                'status' => $response->status(),
+                'error' => $response->json('error')
+                    ?: 'El servidor de WhatsApp no pudo entregar el documento. Verifica que la línea esté conectada.',
+                'data' => $response->json(),
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'success' => false,
+                'status' => 500,
+                'error' => 'Error de conexión con el servicio de WhatsApp: ' . $e->getMessage(),
+                'data' => null,
+            ];
+        }
+    }
 }

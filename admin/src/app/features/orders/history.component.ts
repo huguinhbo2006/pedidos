@@ -103,6 +103,23 @@ import { Order } from '../../core/models/api.models';
                     <small class="delivered-at">Entregado: {{ order.delivered_at | date:'short' }}</small>
                   }
 
+                  <button
+                    type="button"
+                    class="btn btn-thankyou-btn btn-sm"
+                    [class.sent]="!!order.thank_you_sent_at"
+                    [disabled]="sendingThankYouId() === order.id"
+                    (click)="sendThankYouWhatsApp(order)"
+                    title="Enviar WhatsApp al cliente: «¡Muchas gracias por tu compra!»"
+                  >
+                    @if (sendingThankYouId() === order.id) {
+                      ⏳ Enviando...
+                    } @else if (order.thank_you_sent_at) {
+                      🙌 Gracias ✓
+                    } @else {
+                      🙌 Gracias
+                    }
+                  </button>
+
                   <a
                     [routerLink]="['/pedidos/editar', order.id]"
                     class="btn btn-outline btn-sm"
@@ -269,8 +286,22 @@ import { Order } from '../../core/models/api.models';
     .foot-right {
       display: flex;
       align-items: center;
-      gap: 0.65rem;
+      flex-wrap: wrap;
+      gap: 0.55rem;
       .delivered-at { font-size: 0.8rem; color: var(--text-muted); }
+    }
+    .btn-thankyou-btn {
+      background: #f0fdf4;
+      color: var(--brand-green);
+      border: 1px solid #86efac;
+      font-weight: 700;
+      &:hover:not(:disabled) {
+        background: #dcfce7;
+      }
+      &.sent {
+        background: #eaf8ef;
+        border-color: var(--brand-green);
+      }
     }
     .badge-delivered { background: var(--bg-green-soft); color: var(--brand-green); }
     .badge-pending { background: #fff3db; color: #9a5406; }
@@ -346,6 +377,7 @@ export class HistoryComponent implements OnInit {
   readonly loading = signal(true);
   readonly orders = signal<Order[]>([]);
   readonly downloadingPdfId = signal<number | null>(null);
+  readonly sendingThankYouId = signal<number | null>(null);
   readonly deletingOrder = signal<Order | null>(null);
   readonly isDeleting = signal(false);
 
@@ -446,6 +478,36 @@ export class HistoryComponent implements OnInit {
         this.toast.error('No se pudo generar el PDF.');
       },
     });
+  }
+
+  sendThankYouWhatsApp(order: Order): void {
+    if (this.sendingThankYouId() !== null) return;
+
+    this.sendingThankYouId.set(order.id);
+    this.api
+      .sendOrderWhatsApp(order.id, {
+        recipient_type: 'customer',
+        template: 'thank_you',
+      })
+      .subscribe({
+        next: (res) => {
+          this.sendingThankYouId.set(null);
+          if (res.order) {
+            this.orders.update((list) =>
+              list.map((o) => (o.id === res.order!.id ? { ...o, ...res.order! } : o))
+            );
+          }
+          this.toast.success(`🙌 Mensaje "¡Gracias por tu compra!" enviado a ${order.customer_name}.`);
+        },
+        error: (err) => {
+          this.sendingThankYouId.set(null);
+          const msg =
+            err?.error?.error ||
+            err?.error?.message ||
+            'No se pudo enviar el WhatsApp de agradecimiento.';
+          this.toast.error(msg);
+        },
+      });
   }
 
   formatDeliveryTime(val?: string | null): string {

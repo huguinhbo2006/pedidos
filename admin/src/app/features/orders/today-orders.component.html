@@ -246,6 +246,23 @@
 
               <button
                 type="button"
+                class="btn btn-onway-btn btn-sm"
+                [class.sent]="!!order.on_the_way_sent_at"
+                [disabled]="sendingOnTheWayId() === order.id"
+                (click)="sendQuickOnTheWay(order)"
+                title="Enviar aviso rápido por WhatsApp: «¡Ya vamos para allá!»"
+              >
+                @if (sendingOnTheWayId() === order.id) {
+                  ⏳ Enviando...
+                } @else if (order.on_the_way_sent_at) {
+                  🛵 En camino ✓
+                } @else {
+                  🛵 Ya vamos
+                }
+              </button>
+
+              <button
+                type="button"
                 class="btn btn-whatsapp-btn btn-sm"
                 (click)="openWhatsAppModal(order)"
                 title="Enviar notificación por WhatsApp al cliente o repartidor"
@@ -317,6 +334,27 @@
           <p class="confirm-question">
             ¿Confirmas que este pedido ya fue entregado al cliente?
           </p>
+
+          <div class="modern-checkbox-row">
+            <label class="custom-checkbox">
+              <input
+                type="checkbox"
+                [ngModel]="sendThankYouOnDeliver()"
+                (ngModelChange)="sendThankYouOnDeliver.set($event)"
+                [disabled]="deliveringId() !== null"
+              />
+              <span class="checkbox-text">
+                <strong>🙌 Enviar WhatsApp: «¡Muchas gracias por tu compra!»</strong>
+                @if (order.thank_you_sent_at) {
+                  <small>Ya se había enviado un agradecimiento antes; marca si deseas enviarlo de nuevo.</small>
+                } @else if (!hasConnectedWhatsApp()) {
+                  <small>No se detectó una línea de WhatsApp conectada en este momento.</small>
+                } @else {
+                  <small>Se enviará automáticamente al celular {{ order.customer_phone }} al confirmar.</small>
+                }
+              </span>
+            </label>
+          </div>
         </div>
 
         <div class="confirm-actions">
@@ -429,6 +467,38 @@
               <small>{{ whatsappEmployees().length }} colaboradores registrados</small>
             </button>
           </div>
+
+          @if (whatsappRecipientType() === 'customer') {
+            <div class="wa-template-pills">
+              <button
+                type="button"
+                class="tpl-pill"
+                [class.active]="whatsappCustomerTemplate() === 'confirmation'"
+                (click)="setWhatsAppCustomerTemplate('confirmation')"
+                [disabled]="isSendingWhatsApp()"
+              >
+                📋 Confirmación
+              </button>
+              <button
+                type="button"
+                class="tpl-pill"
+                [class.active]="whatsappCustomerTemplate() === 'on_the_way'"
+                (click)="setWhatsAppCustomerTemplate('on_the_way')"
+                [disabled]="isSendingWhatsApp()"
+              >
+                🛵 Ya vamos para allá
+              </button>
+              <button
+                type="button"
+                class="tpl-pill"
+                [class.active]="whatsappCustomerTemplate() === 'thank_you'"
+                (click)="setWhatsAppCustomerTemplate('thank_you')"
+                [disabled]="isSendingWhatsApp()"
+              >
+                🙌 Gracias por su compra
+              </button>
+            </div>
+          }
 
           @if (whatsappRecipientType() === 'employee') {
             <div class="form-group modern-field" style="margin-top: 0.85rem;">

@@ -1025,6 +1025,78 @@ class TacosDoradosApiTest extends TestCase
         $this->assertDatabaseMissing('torteros', ['id' => $t2['id']]);
     }
 
+    public function test_order_whatsapp_on_the_way_thank_you_deliver_and_unregistered_number_error(): void
+    {
+        $token = $this->authenticate();
+        $tacoPapa = Product::where('name', 'Taco Dorado Normal de Papa (Con salsa, col y chile)')->firstOrFail();
+
+        \App\Models\WhatsAppDevice::create([
+            'session_id' => 'wa_orders_tpl',
+            'name' => 'Línea Pedidos',
+            'status' => 'CONNECTED',
+            'is_default' => true,
+        ]);
+
+        $orderResp = $this->withToken($token)
+            ->postJson('/api/orders', [
+                'customer_phone' => '3312340000',
+                'customer_name' => 'Sofía Hernández',
+                'delivery_address' => 'Av. Chapultepec 321',
+                'items' => [
+                    [
+                        'item_type' => 'product',
+                        'product_id' => $tacoPapa->id,
+                        'quantity' => 6,
+                        'is_promo' => false,
+                    ],
+                ],
+            ])
+            ->assertStatus(201)
+            ->json();
+
+        $orderId = $orderResp['id'];
+
+        \Illuminate\Support\Facades\Http::fake([
+            '*/sessions/*/send-message' => \Illuminate\Support\Facades\Http::sequence()
+                ->push(['success' => true, 'to' => '5213312340000'], 200)
+                ->push(['success' => true, 'to' => '5213312340000'], 200)
+                ->push(['success' => false, 'error' => "El número '5213312340000' no está registrado en WhatsApp."], 422),
+        ]);
+
+        // 1. Enviar aviso "Ya vamos para allá"
+        $onWayResp = $this->withToken($token)
+            ->postJson("/api/orders/{$orderId}/whatsapp", [
+                'recipient_type' => 'customer',
+                'template' => 'on_the_way',
+            ])
+            ->assertOk();
+
+        $this->assertStringContainsString('YA VAMOS PARA ALLÁ', $onWayResp->json('sent_text'));
+        $this->assertNotNull($onWayResp->json('order.on_the_way_sent_at'));
+
+        // 2. Confirmar entrega enviando "Gracias por su compra"
+        $deliverResp = $this->withToken($token)
+            ->patchJson("/api/orders/{$orderId}/deliver", [
+                'send_thank_you' => true,
+            ])
+            ->assertOk();
+
+        $deliverResp
+            ->assertJsonPath('order.is_delivered', true)
+            ->assertJsonPath('whatsapp_sent', true);
+        $this->assertNotNull($deliverResp->json('order.thank_you_sent_at'));
+
+        // 3. Propagar error 422 cuando WhatsApp API indica número no registrado
+        $this->withToken($token)
+            ->postJson("/api/orders/{$orderId}/whatsapp", [
+                'recipient_type' => 'customer',
+                'template' => 'thank_you',
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('error', "El número '5213312340000' no está registrado en WhatsApp.");
+    }
+
     private function authenticate(): string
     {
         return $this->postJson('/api/login', [
