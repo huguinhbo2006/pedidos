@@ -1,95 +1,121 @@
 # Estado del Proyecto — Sistema de Pedidos Taquería Mary
 
-Última actualización: **19 de noviembre de 2026** (Integración de Módulo de Dispositivos WhatsApp con Railway)
+**Última actualización:** 19 de noviembre de 2026 (Cierre de jornada — Listo para continuar en la oficina)
 
 ---
 
-## 1. Información general del repositorio y despliegue
+## 1. Información General del Repositorio y Despliegues
 
-- **Repositorio GitHub:** `https://github.com/huguinhbo2006/pedidos.git` (rama principal: `main`)
-- **Frontend (Angular 20):** carpeta `admin/` → despliega automático a `https://pedidos.taqueriamary.com` vía `.github/workflows/deploy-admin.yml` cuando hay cambios en `admin/**`.
-- **Backend (Laravel 12 + SQLite + Sanctum + DomPDF):** carpeta `api/` → despliega automático a `https://api-pedidos.taqueriamary.com` vía `.github/workflows/deploy-api.yml` cuando hay cambios en `api/**` (ejecuta `php artisan migrate --force` sin borrar la base de datos SQLite de producción).
-- **Usuario de acceso:** `hugo.perez` / `12345`
-- **Microservicio WhatsApp (Railway):** `https://whatsapp-api-production-80b7.up.railway.app`
+- **Repositorio GitHub Principal:** `https://github.com/huguinhbo2006/pedidos.git` (rama `main`)
+- **Frontend (Angular 20):** Carpeta `admin/` → Despliegue automatizado en Hostinger (`https://pedidos.taqueriamary.com`) mediante `.github/workflows/deploy-admin.yml`.
+- **Backend (Laravel 12 + SQLite + Sanctum + DomPDF):** Carpeta `api/` → Despliegue automatizado en Hostinger (`https://api-pedidos.taqueriamary.com`) mediante `.github/workflows/deploy-api.yml` (migraciones aditivas sin alterar datos de producción).
+- **Microservicio WhatsApp (Node.js + Baileys + Express):** Repositorio `whatsapp-api` desplegado en Railway (`https://whatsapp-api-production-80b7.up.railway.app`).
+- **Usuario de Acceso:** `hugo.perez` / `12345`
 
 ### Cómo levantarlo localmente
+```powershell
+# Backend (Laravel)
+cd api
+composer install
+php artisan migrate
+php artisan serve --host=127.0.0.1 --port=8000
 
-1. **Backend (`api/`):**
-   ```powershell
-   cd api
-   composer install
-   php artisan migrate
-   php artisan serve --host=127.0.0.1 --port=8000
-   ```
-2. **Frontend (`admin/`):**
-   ```powershell
-   cd admin
-   npm install
-   npm start
-   ```
-   También puedes usar `iniciar-backend.bat` e `iniciar-frontend.bat` desde la raíz.
+# Frontend (Angular)
+cd admin
+npm install
+npm start
+```
+*(O ejecutar directamente los scripts `iniciar-backend.bat` e `iniciar-frontend.bat` desde la raíz)*.
 
 ---
 
-## 2. Lo que YA se ha hecho y está terminado
+## 2. Lo que se ha realizado y está terminado al 100%
 
 ### A. Catálogo, Paquetes y Clientes
-- **Catálogo de productos:** CRUD completo, activación/desactivación y protección contra borrado accidental en pedidos.
-- **Paquetes configurables:** Grupos de selección con límites (`min_quantity`, `max_quantity`) y opciones enlazadas a productos del catálogo con costos extra (`extra_price`).
-- **Clientes y múltiples domicilios:** Búsqueda rápida por teléfono y guardado automático de direcciones con autocompletado de Google Maps.
+- **Catálogo de productos:** CRUD completo, filtros por categorías, activación/desactivación y protección contra borrado accidental de productos en pedidos existentes.
+- **Paquetes configurables:** Grupos de selección con cantidades mínimas y máximas (`min_quantity`, `max_quantity`) y opciones vinculadas a productos con precios extra opcionales (`extra_price`).
+- **Clientes y múltiples domicilios:** Detección automática por número celular, historial de direcciones y autocompletado con Google Maps Places & Geocoding.
 
-### B. Sistema de Promociones y Descuentos
-- **3 Tipos de Promociones:** `free_product`, `discount` y `fixed_price_combo`.
-- **Descuentos manuales:** En `$ Pesos` o `% Porc.` con motivo opcional.
-- **Alertas proactivas y toasts:** Al desbloquear promociones en el carrito.
+### B. Promociones y Descuentos
+- **3 Tipos de promociones automáticas:** `free_product` (regalo de producto/bebida), `discount` (% o monto fijo al cumplir reglas) y `fixed_price_combo` (precio fijo por combinación de productos).
+- **Descuentos manuales:** Soporte en pesos (`$`) o porcentaje (`%`) con motivo opcional.
 
-### C. Fecha de Entrega Completa (`delivery_date`), Hora y Pedidos Programados
-- **Migración aditiva:** `2026_11_20_010000_add_delivery_date_to_orders_table.php` (agrega columna `delivery_date` indexada a `orders`).
-- **Backend:** `store()`, `update()`, `today()` con filtro de fecha programada y `upcoming_orders` para pedidos agendados a futuro (`GET /api/orders/upcoming`).
-- **Frontend Angular:** Selector de fecha en Nuevo Pedido (`Hoy`, `Mañana`, `<input type="date">`) y pestañas en Pedidos del Día (`Hoy` vs `📅 Próximos Programados`).
-- **Comprobante PDF:** Fecha y hora programada claramente visibles.
+### C. Pedidos Programados y Control de Fechas
+- **Columna `delivery_date` indexada:** Filtro para pedidos de `Hoy` vs `📅 Próximos Programados` (`GET /api/orders/upcoming`).
+- **Comprobante de compra:** Ticket en PDF oficial con fecha y hora claramente identificadas.
+- **Edición y Cancelación:** Edición completa en el wizard de pedidos (`/pedidos/editar/:id`) y cancelación segura con modal de confirmación.
 
-### D. Modificar y Eliminar Pedidos
-- **Modificar:** Ruta `/pedidos/editar/:id` y `PUT /api/orders/{id}` con carga completa del wizard.
-- **Eliminar:** Botón `🗑️` con modal de confirmación obligatoria e irreversible y borrado en cascada en `DELETE /api/orders/{id}`.
+### D. Módulo de Dispositivos WhatsApp Multiusuario (Baileys en Railway)
+- **Multi-dispositivo:** Conexión de múltiples números de WhatsApp identificados por `session_id`.
+- **Vinculación por QR en tiempo real:** Generación de QR en vivo dentro del modal, con auto-detección y confirmación visual inmediata al escanear.
+- **Modal de Testeo:** Botón en cada línea para enviar mensajes de prueba a cualquier número con reporte en vivo de entrega.
+- **Configuración dinámica:** Gestión del endpoint de Railway desde la interfaz con guardado en `app_settings`.
 
-### E. Módulo de Dispositivos WhatsApp Multiusuario (Conectado a Railway)
-- **Base de Datos:** Migración `2026_11_20_020000_create_whatsapp_devices_table.php` y modelo `WhatsAppDevice.php`.
-- **Backend:** `WhatsAppDeviceController.php` conectado al microservicio de Railway (`https://whatsapp-api-production-80b7.up.railway.app`):
-  - `GET /api/whatsapp/devices`: Lista dispositivos y sincroniza en vivo los estados con Railway.
-  - `POST /api/whatsapp/devices`: Crea dispositivo y solicita QR en tiempo real.
-  - `POST /api/whatsapp/devices/{id}/test-message`: Enviar mensaje de prueba con número y texto personalizado.
-  - `GET /api/whatsapp/devices/{id}/qr`: Consulta QR y auto-detecta estado de vinculación.
-  - `GET /api/whatsapp/devices/{id}/sync`: Sincroniza estado de conexión en vivo.
-  - `PATCH /api/whatsapp/devices/{id}/default`: Marca la línea como predeterminada/principal.
-  - `DELETE /api/whatsapp/devices/{id}`: Desvincula la sesión en Railway y la elimina de la BD.
-  - `GET /api/whatsapp/settings` y `PUT /api/whatsapp/settings`: Consulta y actualiza la URL del servidor Railway.
-- **Frontend Angular (`/whatsapp`):**
-  - Nuevo enlace en el menú de navegación: **💬 WhatsApp**.
-  - Pantalla con tarjetas de dispositivos vinculados, estado `🟢 En línea` / `⚪ Desconectado`, badge de `⭐ Principal` y número telefónico vinculado.
-  - **Modal interactivo de vinculación:** Escribes el nombre/alias, se genera el código QR en vivo, y al escanearlo con el celular, el modal lo detecta automáticamente cada 2.8s y muestra la confirmación de conexión en verde.
-  - **Modal de prueba de envío:** Botón `✉️ Testear Mensaje` en cada línea conectada que abre un modal para ingresar número telefónico destino y mensaje personalizado con reporte en vivo del envío.
-  - Modal de configuración para modificar la URL de Railway si fuera necesario.
+### E. Catálogo de Empleados
+- **CRUD de Colaboradores:** Registro de empleados (`/empleados`) con nombre, teléfono celular, rol (`🛵 Repartidor`, `👨‍🍳 Cocina`, `💵 Caja`, `🌮 Mostrador`), notas y switch de activación.
 
-### F. Catálogo de Empleados y Notificaciones de Pedidos por WhatsApp
-- **Base de Datos:**
-  - Migración `2026_11_20_030000_create_employees_table.php` (tabla `employees` y columna `assigned_employee_id` en `orders`).
-  - Modelos `Employee.php` y relación en `Order.php`.
-- **Backend:**
-  - `EmployeeController.php`: CRUD completo (`GET /api/employees`, `POST /api/employees`, `PUT /api/employees/{id}`, `PATCH /api/employees/{id}/toggle-active`, `DELETE /api/employees/{id}`).
-  - `POST /api/orders/{order}/whatsapp`: Envío automático con plantillas profesionales:
-    - **Al Cliente:** Folio, fecha, hora estimada, domicilio, referencias, detalle de productos y total a pagar.
-    - **Al Repartidor:** Datos del cliente, teléfono, dirección, enlace con coordenadas a Google Maps, productos y monto exacto a cobrar en la entrega.
-- **Frontend Angular:**
-  - Módulo `/empleados` con listado de personal, roles (`🛵 Repartidor`, `👨‍🍳 Cocina`, `💵 Caja`, `🌮 Mostrador`), modal para dar de alta/editar, switch de estado activo/inactivo, y botón para enviar WhatsApp directo al empleado.
-  - Enlace `🛵 Empleados` en la barra superior de navegación.
-  - Selector de repartidor asignado en `Nuevo Pedido` (Paso 2).
-  - En `Pedidos del Día`: insignia del repartidor asignado, enlace de llamada en el teléfono del cliente, botón `🗺️ Mapa` para abrir la dirección en Google Maps con un clic, botón `📞 Llamar` para marcar directamente al celular registrado y botón `💬 WhatsApp` para enviar avisos al cliente o al repartidor con vista previa editable.
+### F. Envío de Ticket Oficial en PDF por WhatsApp
+- **Soporte Base64 en Baileys:** Microservicio actualizado para recibir documentos codificados en Base64 (`mediaBase64`), evitando exponer URLs públicas de almacenamiento.
+- **Generación en Backend:** `OrderController` genera el ticket oficial con logotipo de Taquería Mary en base64 y lo despacha como archivo adjunto `ticket-PED-XXX.pdf` vía WhatsApp.
+- **Botón directo `📎 Enviar PDF`:** En cada tarjeta de Pedidos del Día para abrir el modal con el envío de PDF preseleccionado.
+- **Casilla de alternancia:** En el modal de WhatsApp para decidir en cualquier momento si se adjunta o no el ticket PDF.
 
-### G. Estado de Pruebas y Compilación
-- **Laravel (`php artisan test`):** `11 passed (141 assertions)` en `api/tests/Feature/TacosDoradosApiTest.php`.
-- **Angular (`npm run build`):** compila limpio en 4.3s con `0` errores y `0` advertencias.
-- **Despliegues Git:**
-  - Microservicio Railway `whatsapp-api`: verificado en producción (`https://whatsapp-api-production-80b7.up.railway.app/health`).
-  - Proyecto `pedidos`: subido a GitHub `origin main` (Hostinger).
+### G. Desglose Completo de Paquetes en WhatsApp
+- **Detalle de guisos y complementos:** Al enviar el mensaje de WhatsApp (tanto a empleados como a clientes y por WhatsApp Web), si el pedido tiene paquetes, se desglosa exactamente lo ordenado:
+  ```text
+  • 1x Paquete 20 Tacos
+     - 10x Taco de Papa
+     - 5x Taco de Frijol
+     - 5x Taco de Barbacoa
+  • 1x Consomé Grande
+  ```
+- **Plantilla para Empleados estructurada:** Mapa (con enlace directo y referencias), Celular del cliente, Fecha en palabras y hora, Total exacto a cobrar y Detalle completo del pedido.
 
+### H. Botones Rápidos en Pedidos del Día
+- **`🗺️ Mapa`:** Abre la ubicación en Google Maps en una nueva pestaña con un solo toque.
+- **`📞 Llamar`:** Lanza llamada telefónica inmediata con el protocolo `tel:`.
+
+### I. Inputs Modernos y Corrección Total del Scroll en Modales
+- **Diseño de Inputs:** Halo de enfoque dorado/taquería (`#D97706`), íconos en etiquetas, asteriscos de obligatoriedad, prefijo de bandera mexicana (`🇲🇽 +52`) y tarjetas interactivas de selección.
+- **Scroll Responsivo:** Modales con encabezado y botones de acción fijos, cuerpo central con `overflow-y: auto`, `max-height: calc(100vh - 2.5rem)` y desplazamiento táctil suave (`-webkit-overflow-scrolling: touch`), garantizando que nunca se corten botones en pantallas pequeñas, laptops o celulares.
+
+### J. Pruebas y Compilación
+- **Tests de Backend (PHPUnit / Pest):** `11 passed (148 assertions)` sin ningún error.
+- **Compilación Angular:** `Application bundle generation complete` con 0 errores.
+- **Despliegues en Producción:** Todo sincronizado en GitHub `origin main`.
+
+---
+
+## 3. Hoja de Ruta / Mejoras Propuestas para Continuar Mañana en la Oficina
+
+A continuación se listan las mejoras analizadas y recomendadas para implementar en la siguiente sesión de trabajo:
+
+### 🛵 Fase 1: Operación Rápida y Ahorro de Tiempo (Prioridad Alta)
+1. **Botón de WhatsApp "🛵 En camino":**
+   - Mensaje de 1 solo clic en la tarjeta del pedido para avisar al cliente:
+     *«¡Hola [Nombre]! Tu pedido ya va en camino hacia tu domicilio. Llegamos en aproximadamente 15-20 minutos. ¡Ten tu pago listo! 🌮»*
+2. **Botón de WhatsApp "✅ Entregado":**
+   - Mensaje de agradecimiento automático que invita al cliente a calificar el servicio o dejar una reseña en Google Maps.
+3. **Formato para Impresora Térmica (Tickets de rollo 58mm / 80mm):**
+   - Botón de impresión directa tipo comanda de rollo para grapar a las bolsas de entrega y para el comalero, sin descargar hojas tamaño carta.
+4. **Alerta Sonora de Pedidos Próximos:**
+   - Notificación sonora tipo chime cuando falten 30 o 45 minutos para la hora de entrega de un pedido agendado.
+
+### 🌮 Fase 2: Ventas y Autoservicio
+5. **Menú Digital Web para Clientes (`pedidos.taqueriamary.com` o link público):**
+   - Un catálogo en línea donde los clientes armen su pedido desde su celular, elijan su dirección en el mapa y envíen el pedido directo al sistema o por WhatsApp, liberando al dueño de capturar manualmente.
+6. **Difusión de Promociones a Clientes Frecuentes:**
+   - Módulo para enviar ofertas especiales del día (ej. *Viernes de Consomé*) a clientes que han comprado en las últimas semanas.
+7. **Programa de Cliente Frecuente (Tacos o Puntos Acumulados):**
+   - Contador de pedidos por cliente con recompensas automáticas al llegar a 10 pedidos.
+
+### 📊 Fase 3: Control Financiero y Producción de Cocina
+8. **Corte de Caja Diario y Turno:**
+   - Resumen al cierre de jornada: Total cobrado en Efectivo vs Transferencia/Tarjeta.
+   - **Conteo exacto para producción de cocina:** Cuántos tacos de barbacoa, papa, frijol o requesón se vendieron en el día para saber cuántos kilos de carne y masa preparar para el día siguiente sin merma.
+9. **Modo Pantalla de Cocina / KDS:**
+   - Vista en tablet o pantalla para cocina donde solo se ven guisos, cantidades y notas (sin precios ni datos de cobro), con botón grande de "Preparado".
+
+### 🔒 Fase 4: Seguridad y Respaldo
+10. **Respaldo Automático de Base de Datos:**
+    - Cron diario que envíe una copia de seguridad de la base de datos SQLite a un correo o almacenamiento en la nube para garantizar cero pérdidas de información.
