@@ -222,7 +222,7 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
   }
 
   // --- WhatsApp Order Notifications ---
-  openWhatsAppModal(order: Order, defaultType: 'customer' | 'employee' = 'customer'): void {
+  openWhatsAppModal(order: Order, defaultType: 'customer' | 'employee' = 'employee'): void {
     this.whatsappTargetOrder.set(order);
     this.whatsappRecipientType.set(defaultType);
     this.whatsappStatus.set(null);
@@ -269,36 +269,80 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
     this.refreshWhatsAppMessagePreview();
   }
 
+  formatDateInWords(val?: string | null): string {
+    if (!val) {
+      const today = new Date();
+      const formatted = new Intl.DateTimeFormat('es-MX', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      }).format(today);
+      return formatted.charAt(0).toUpperCase() + formatted.slice(1);
+    }
+
+    const dateOnly = val.substring(0, 10);
+    const parts = dateOnly.split('-');
+    if (parts.length === 3) {
+      const year = Number(parts[0]);
+      const month = Number(parts[1]) - 1;
+      const day = Number(parts[2]);
+      const dateObj = new Date(year, month, day);
+
+      const formatted = new Intl.DateTimeFormat('es-MX', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      }).format(dateObj);
+
+      return formatted.charAt(0).toUpperCase() + formatted.slice(1);
+    }
+    return dateOnly;
+  }
+
   refreshWhatsAppMessagePreview(): void {
     const order = this.whatsappTargetOrder();
     if (!order) return;
 
     const type = this.whatsappRecipientType();
-    const dateStr = this.formatDeliveryDate(order.delivery_date);
     const timeStr = this.formatDeliveryTime(order.delivery_time);
-
-    let itemsText = '';
-    for (const it of order.items) {
-      const promo = it.is_promo ? ' (PROMO)' : '';
-      itemsText += `• ${it.quantity}x ${it.product_name}${promo} - $${Number(it.line_total).toFixed(2)}\n`;
-    }
 
     if (type === 'employee') {
       const mapsUrl = this.getMapsUrl(order);
-      const msg = `🛵 *ENTREGA ASIGNADA — TAQUERÍA MARY* 🛵\n\n` +
-        `📋 *Pedido:* #${order.order_number}\n` +
-        `📅 *Fecha:* ${dateStr}\n` +
-        `⏰ *Hora:* ${timeStr}\n\n` +
-        `👤 *Cliente:* ${order.customer_name}\n` +
-        `📞 *Teléfono:* ${order.customer_phone}\n` +
-        `📍 *Dirección:* ${order.delivery_address}` +
-        (order.delivery_references ? `\n📝 *Ref:* ${order.delivery_references}` : '') +
-        `\n🗺️ *Maps:* ${mapsUrl}\n\n` +
-        `🌮 *Productos:*\n${itemsText}\n` +
-        `💵 *COBRO AL ENTREGAR:* $${Number(order.total).toFixed(2)} MXN` +
-        (order.notes ? `\n💬 *Notas:* ${order.notes}` : '');
+      const dateText = this.formatDateInWords(order.delivery_date);
+      const refText = order.delivery_references ? ` (Ref: ${order.delivery_references})` : '';
+
+      let itemsOnly = '';
+      for (const it of order.items) {
+        const promo = it.is_promo ? ' (PROMO)' : '';
+        itemsOnly += `• ${it.quantity}x ${it.product_name}${promo}\n`;
+      }
+      if (order.notes) {
+        itemsOnly += `📝 Notas: ${order.notes}\n`;
+      }
+
+      const msg = `🗺️ *MAPA:*\n` +
+        `${mapsUrl}\n` +
+        `📍 ${order.delivery_address}${refText}\n\n` +
+        `📱 *CELULAR:*\n` +
+        `${order.customer_phone} (${order.customer_name})\n\n` +
+        `📅 *FECHA Y HORA:*\n` +
+        `${dateText} — ${timeStr}\n\n` +
+        `💵 *TOTAL A COBRAR:*\n` +
+        `$${Number(order.total).toFixed(2)} MXN\n\n` +
+        `🌮 *PEDIDO (#${order.order_number}):*\n` +
+        itemsOnly.trim();
+
       this.whatsappMessageText.set(msg);
     } else {
+      const dateStr = this.formatDeliveryDate(order.delivery_date);
+      let itemsText = '';
+      for (const it of order.items) {
+        const promo = it.is_promo ? ' (PROMO)' : '';
+        itemsText += `• ${it.quantity}x ${it.product_name}${promo} - $${Number(it.line_total).toFixed(2)}\n`;
+      }
+
       const msg = `🌮 *TAQUERÍA MARY* 🌮\n` +
         `¡Hola, *${order.customer_name}*! Confirmamos tu pedido:\n\n` +
         `📋 *Pedido:* #${order.order_number}\n` +

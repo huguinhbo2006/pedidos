@@ -886,25 +886,36 @@ class OrderController extends Controller
         if ($type === 'employee') {
             $mapsUrl = '';
             if ($order->delivery_lat && $order->delivery_lng) {
-                $mapsUrl = "\n🗺️ *Ubicación Maps:* https://www.google.com/maps/search/?api=1&query={$order->delivery_lat},{$order->delivery_lng}";
+                $mapsUrl = "https://www.google.com/maps/search/?api=1&query={$order->delivery_lat},{$order->delivery_lng}";
             } else {
                 $query = urlencode($order->delivery_address);
-                $mapsUrl = "\n🗺️ *Buscar en Maps:* https://www.google.com/maps/search/?api=1&query={$query}";
+                $mapsUrl = "https://www.google.com/maps/search/?api=1&query={$query}";
             }
 
-            return "🛵 *ENTREGA ASIGNADA — TAQUERÍA MARY* 🛵\n\n"
-                . "📋 *Pedido:* #{$order->order_number}\n"
-                . "📅 *Fecha:* {$dateStr}\n"
-                . "⏰ *Hora de entrega:* {$timeStr}\n\n"
-                . "👤 *Cliente:* {$order->customer_name}\n"
-                . "📞 *Tel:* {$order->customer_phone}\n"
-                . "📍 *Dirección:* {$order->delivery_address}"
-                . ($order->delivery_references ? "\n📝 *Ref:* {$order->delivery_references}" : '')
-                . $mapsUrl . "\n\n"
-                . "🌮 *Detalle del pedido:*\n"
-                . $itemsList . "\n"
-                . "💵 *COBRO AL ENTREGAR:* $" . number_format($order->total, 2) . " MXN"
-                . ($order->notes ? "\n💬 *Notas:* {$order->notes}" : '');
+            $dateObj = $order->delivery_date ? Carbon::parse($order->delivery_date)->locale('es') : Carbon::today()->locale('es');
+            $dateText = ucfirst($dateObj->translatedFormat('l, j \d\e F \d\e Y'));
+            $timeText = $order->delivery_time ?: 'Lo antes posible';
+
+            $itemsOnly = '';
+            foreach ($order->items as $item) {
+                $promoTag = $item->is_promo ? ' (PROMO)' : '';
+                $itemsOnly .= "• {$item->quantity}x {$item->product_name}{$promoTag}\n";
+            }
+            if ($order->notes) {
+                $itemsOnly .= "📝 Notas: {$order->notes}\n";
+            }
+
+            return "🗺️ *MAPA:*\n"
+                . "{$mapsUrl}\n"
+                . "📍 {$order->delivery_address}" . ($order->delivery_references ? " (Ref: {$order->delivery_references})" : "") . "\n\n"
+                . "📱 *CELULAR:*\n"
+                . "{$order->customer_phone} ({$order->customer_name})\n\n"
+                . "📅 *FECHA Y HORA:*\n"
+                . "{$dateText} — {$timeText}\n\n"
+                . "💵 *TOTAL A COBRAR:*\n"
+                . "$" . number_format($order->total, 2) . " MXN\n\n"
+                . "🌮 *PEDIDO (#{$order->order_number}):*\n"
+                . trim($itemsOnly);
         }
 
         return "🌮 *TAQUERÍA MARY* 🌮\n"

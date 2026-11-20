@@ -120,12 +120,6 @@
             </a>
           </div>
 
-          @if (order.assigned_employee) {
-            <div class="assigned-employee-pill">
-              🛵 <strong>Repartidor:</strong> {{ order.assigned_employee.name }}
-            </div>
-          }
-
           <div class="delivery-time-pill scheduled">
             📅 <strong>Entrega:</strong> {{ formatDeliveryDate(order.delivery_date) }} &nbsp;·&nbsp; ⏰ <strong>Hora:</strong> {{ formatDeliveryTime(order.delivery_time) }}
           </div>
@@ -412,14 +406,14 @@
               [class.active]="whatsappRecipientType() === 'employee'"
               (click)="setWhatsAppRecipientType('employee')"
             >
-              🛵 Al Repartidor
-              <small>{{ whatsappEmployees().length }} repartidores disponibles</small>
+              👥 Al Empleado / Personal
+              <small>{{ whatsappEmployees().length }} colaboradores registrados</small>
             </button>
           </div>
 
           @if (whatsappRecipientType() === 'employee') {
             <div class="form-group" style="margin-top: 0.85rem;">
-              <label for="waEmpSelect"><strong>Seleccionar Repartidor / Empleado: *</strong></label>
+              <label for="waEmpSelect"><strong>Seleccionar Empleado destinatario: *</strong></label>
               <select
                 id="waEmpSelect"
                 class="form-control"
