@@ -185,6 +185,12 @@ export class TodayOrdersComponent implements OnInit, OnDestroy {
     return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.delivery_address)}`;
   }
 
+  getTelUrl(phone?: string | null): string {
+    if (!phone) return 'tel:';
+    const clean = phone.replace(/[^\d+]/g, '');
+    return `tel:${clean}`;
+  }
+
   formatDeliveryDate(val?: string | null): string {
     if (!val) return 'Hoy';
     const dateOnly = val.substring(0, 10);

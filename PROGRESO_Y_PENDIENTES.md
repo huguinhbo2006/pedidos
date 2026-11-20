@@ -84,7 +84,7 @@
   - Módulo `/empleados` con listado de personal, roles (`🛵 Repartidor`, `👨‍🍳 Cocina`, `💵 Caja`, `🌮 Mostrador`), modal para dar de alta/editar, switch de estado activo/inactivo, y botón para enviar WhatsApp directo al empleado.
   - Enlace `🛵 Empleados` en la barra superior de navegación.
   - Selector de repartidor asignado en `Nuevo Pedido` (Paso 2).
-  - En `Pedidos del Día`: insignia del repartidor asignado y botón `💬 WhatsApp` en cada pedido para enviar avisos al cliente o al repartidor con vista previa editable.
+  - En `Pedidos del Día`: insignia del repartidor asignado, enlace de llamada en el teléfono del cliente, botón `🗺️ Mapa` para abrir la dirección en Google Maps con un clic, botón `📞 Llamar` para marcar directamente al celular registrado y botón `💬 WhatsApp` para enviar avisos al cliente o al repartidor con vista previa editable.
 
 ### G. Estado de Pruebas y Compilación
 - **Laravel (`php artisan test`):** `11 passed (141 assertions)` en `api/tests/Feature/TacosDoradosApiTest.php`.

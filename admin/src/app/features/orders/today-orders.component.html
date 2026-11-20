@@ -115,7 +115,9 @@
 
           <div class="customer-box">
             <div class="customer-name">👤 {{ order.customer_name }}</div>
-            <div class="customer-phone">📞 {{ order.customer_phone }}</div>
+            <a [href]="getTelUrl(order.customer_phone)" class="customer-phone customer-phone-link" title="Clic para marcar al celular">
+              📞 {{ order.customer_phone }}
+            </a>
           </div>
 
           @if (order.assigned_employee) {
@@ -211,15 +213,23 @@
             </div>
 
             <div class="foot-btns">
-              <button
-                type="button"
-                class="btn btn-outline btn-sm"
-                [disabled]="downloadingPdfId() === order.id"
-                (click)="openPdf(order)"
-                title="Abrir / descargar comprobante PDF"
+              <a
+                class="btn btn-map-btn btn-sm"
+                [href]="getMapsUrl(order)"
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Abrir mapa con la dirección de entrega"
               >
-                {{ downloadingPdfId() === order.id ? 'PDF...' : '📄 PDF' }}
-              </button>
+                🗺️ Mapa
+              </a>
+
+              <a
+                class="btn btn-call-btn btn-sm"
+                [href]="getTelUrl(order.customer_phone)"
+                title="Marcar llamada al celular registrado ({{ order.customer_phone }})"
+              >
+                📞 Llamar
+              </a>
 
               <button
                 type="button"
@@ -228,6 +238,16 @@
                 title="Enviar notificación por WhatsApp al cliente o repartidor"
               >
                 💬 WhatsApp
+              </button>
+
+              <button
+                type="button"
+                class="btn btn-outline btn-sm"
+                [disabled]="downloadingPdfId() === order.id"
+                (click)="openPdf(order)"
+                title="Abrir / descargar comprobante PDF"
+              >
+                {{ downloadingPdfId() === order.id ? 'PDF...' : '📄 PDF' }}
               </button>
 
               <a
